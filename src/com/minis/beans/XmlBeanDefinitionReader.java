@@ -20,7 +20,7 @@ public class XmlBeanDefinitionReader {
             String beanID=element.attributeValue("id");
             String beanClassName=element.attributeValue("class");
             BeanDefinition beanDefinition=new BeanDefinition(beanID,beanClassName);
-            this.bf.registerBeanDefinition(beanDefinition);
+            this.bf.registerBeanDefinition(beanID,beanDefinition);
         }
 		
 	}
