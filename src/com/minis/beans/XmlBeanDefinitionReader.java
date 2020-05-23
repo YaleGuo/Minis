@@ -10,8 +10,8 @@ import org.dom4j.io.SAXReader;
 import com.minis.core.Resource;
 
 public class XmlBeanDefinitionReader {
-	BeanFactory bf;
-	public XmlBeanDefinitionReader(BeanFactory bf) {
+	SimpleBeanFactory bf;
+	public XmlBeanDefinitionReader(SimpleBeanFactory bf) {
 		this.bf = bf;
 	}
 	public void loadBeanDefinitions(Resource res) {
