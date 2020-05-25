@@ -12,7 +12,7 @@ public class PropertyValues{
 	private final List<PropertyValue> propertyValueList;
 
 	public PropertyValues() {
-		this.propertyValueList = new ArrayList<PropertyValue>(0);
+		this.propertyValueList = new ArrayList<PropertyValue>(10);
 	}
 
 	public List<PropertyValue> getPropertyValueList() {
@@ -27,8 +27,8 @@ public class PropertyValues{
 		this.propertyValueList.add(pv);
 	}
 
-	public void addPropertyValue(String propertyName, Object propertyValue) {
-		addPropertyValue(new PropertyValue(propertyName, propertyValue));
+	public void addPropertyValue(String propertyType, String propertyName, Object propertyValue) {
+		addPropertyValue(new PropertyValue(propertyType, propertyName, propertyValue));
 	}
 
 	public void removePropertyValue(PropertyValue pv) {
