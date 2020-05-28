@@ -387,6 +387,187 @@ Preface
 	
 	
 	
+7.
+	createBean()里面不直接handleProperties()了，而是扩充一下概念，调用一个新方法：
+		populateBean(bd, clz, obj);
+		目前阶段，populateBean()只做一件事情：调用handleProperties()
+		private void populateBean(BeanDefinition bd, Class<?> clz, Object obj) {
+			handleProperties(bd, clz, obj);
+		}
+	
+	增强getBean()，在createBean()之后，支持beanpostprocessor和init-method:
+		//beanpostprocessor
+		//step 1 : postProcessBeforeInitialization
+		applyBeanPostProcessorsBeforeInitialization(singleton, beanName);				
+
+		//step 2 : init-method
+		if (bd.getInitMethodName() != null && !bd.getInitMethodName().equals("")) {
+			invokeInitMethod(bd, singleton);
+		}
+
+		//step 3 : postProcessAfterInitialization
+		applyBeanPostProcessorsAfterInitialization(singleton, beanName);
+		
+	为了扩展性，把SimpleBeanFactory分成了AbstractBeanFactory和AutowireCapableBeanFactory。
+	AbstractBeanFactory中applyBeanPostProcessorsBeforeInitialization和applyBeanPostProcessorsAfterInitialization
+	是abstract的。需要在AutowireCapableBeanFactory中去实现，这个类实现了自动注入。(AutowireCapableBeanFactory通过BeanPostProcessor实现了Autowired)
+	
+	定义如下：
+	public abstract class AbstractBeanFactory extends DefaultSingletonBeanRegistry implements BeanFactory,BeanDefinitionRegistry;
+	public class AutowireCapableBeanFactory extends AbstractBeanFactory{
+		private final List<AutowiredAnnotationBeanPostProcessor> beanPostProcessors = new ArrayList<AutowiredAnnotationBeanPostProcessor>();
+	}
+	这个AutowireCapableBeanFactory扩展出来的功能是支持Autowired自动注入,所以里面有一个list存放了AutowiredAnnotationBeanPostProcessor。
+
+	Autowired注解定义如下：
+	@Target(ElementType.FIELD)
+	@Retention(RetentionPolicy.RUNTIME)
+	public @interface Autowired {
+	}
+		
+	BeanPostProcessor接口提供两个方法：
+		Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException;
+		Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException;
+
+	我们在postProcessBeforeInitialization()方法中利用Java的reflection机制进行属性设置，达到自动注入的目的。
+	因此可以看出，在bean的initmethod被调用之前，这些该注入的属性都已经设置好了。
+	
+	实际的注入代码实现如下：
+		String fieldName = field.getName();
+		Object autowiredObj = this.getBeanFactory().getBean(fieldName);
+		field.set(bean, autowiredObj);
+	可以看出，目前我们支持的是按照名称匹配进行注入，这点与Spring的默认模式不一样。后期可以扩展为可配置项。
+	
+	到此，类已经比较多了，我们参照Spring的目录重新组织了一下bzuieans目录结构如下：
+	com.minis
+	com.minis.beans
+	com.minis.beans.factory
+	com.minis.beans.factory.annotation
+	com.minis.beans.factory.config
+	com.minis.beans.factory.support
+	com.minis.beans.factory.xml
+	
+	最后，ClassPathXmlApplicationContext仍然是一个集成环境，给refresh()增加一个功能registerBeanPostProcessors():
+	public void refresh() throws BeansException, IllegalStateException {
+		// Register bean processors that intercept bean creation.
+		registerBeanPostProcessors(this.beanFactory);
+
+		// Initialize other special beans in specific context subclasses.
+		onRefresh();
+	}
+	private void registerBeanPostProcessors(AutowireCapableBeanFactory bf) {
+		//if (supportAutowire) {
+			bf.addBeanPostProcessor(new AutowiredAnnotationBeanPostProcessor());
+		//}
+	}
+	private void onRefresh() {
+		this.beanFactory.refresh();
+	}
+	我们暂时只有自动注入这么一个beanpostprocessor.
+	
+	我们还为ClassPathXmlApplicationContext提供了一个BeanFactoryPostProcessor：
+		private final List<BeanFactoryPostProcessor> beanFactoryPostProcessors =
+			new ArrayList<BeanFactoryPostProcessor>();	
+	别的程序可以利用这个结构来执行一些预处理工作。
 	
 	
+8.
+	为了扩展性，进一步提出几个interface：
+	ListableBeanFactory接口扩展beanfactory，提供一些bean集合的方法。
+	public interface ListableBeanFactory extends BeanFactory {
+		boolean containsBeanDefinition(String beanName);
+		int getBeanDefinitionCount();
+		String[] getBeanDefinitionNames();
+		String[] getBeanNamesForType(Class<?> type);
+		<T> Map<String, T> getBeansOfType(Class<T> type) throws BeansException;
+	}
+	ConfigurableBeanFactory接口扩展BeanFactory,SingletonBeanRegistry，提供BeanPostProcessor和dependent方法：
+	public interface ConfigurableBeanFactory extends BeanFactory,SingletonBeanRegistry {
+		String SCOPE_SINGLETON = "singleton";
+		String SCOPE_PROTOTYPE = "prototype";
+		void addBeanPostProcessor(BeanPostProcessor beanPostProcessor);
+		int getBeanPostProcessorCount();
+		void registerDependentBean(String beanName, String dependentBeanName);
+		String[] getDependentBeans(String beanName);
+		String[] getDependenciesForBean(String beanName);
+	}
+	AutowireCapableBeanFactory接口提供通过beanpostprocessor实现Autowired方法：
+	public interface AutowireCapableBeanFactory  extends BeanFactory{
+		int AUTOWIRE_NO = 0;
+		int AUTOWIRE_BY_NAME = 1;
+		int AUTOWIRE_BY_TYPE = 2;
+		Object applyBeanPostProcessorsBeforeInitialization(Object existingBean, String beanName)
+				throws BeansException;
+		Object applyBeanPostProcessorsAfterInitialization(Object existingBean, String beanName)
+				throws BeansException;
+	}
+	再用一个interface ConfigurableListableBeanFactory把上面的三个interface集成在一起。
+	public interface ConfigurableListableBeanFactory 
+		extends ListableBeanFactory, AutowireCapableBeanFactory, ConfigurableBeanFactory {
+	}
 	
+	这是设计的原则之一：接口隔离。 每个接口提供单一功能，可以组合选择实现那些接口。	
+
+	最后实现了DefaultListableBeanFactory：
+	public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFactory 
+					implements ConfigurableListableBeanFactory
+	这个类现在成了IoC的引擎。
+	
+	ClassPathXmlApplicationContext仍然是集成环境，里面现在包含了一个DefaultListableBeanFactory：
+	public class ClassPathXmlApplicationContext implements ApplicationContext{
+		DefaultListableBeanFactory beanFactory;
+		private final List<BeanFactoryPostProcessor> beanFactoryPostProcessors =
+				new ArrayList<BeanFactoryPostProcessor>();	
+	}
+	
+	为了扩展性，把ClassPathXmlApplicationContext做成一个真正的容器，具有上下文，提出下面的接口：
+	public interface ApplicationContext 
+		extends EnvironmentCapable, ListableBeanFactory, ConfigurableBeanFactory, ApplicationEventPublisher{
+	}
+	支持上下文环境，支持事件发布。	
+	
+	
+9.
+	丰富ApplicationContext接口，现在具有了很多容器的基本方法了：
+	public interface ApplicationContext 
+			extends EnvironmentCapable, ListableBeanFactory, ConfigurableBeanFactory, ApplicationEventPublisher{
+		String getApplicationName();
+		long getStartupDate();
+		ConfigurableListableBeanFactory getBeanFactory() throws IllegalStateException;
+		void setEnvironment(Environment environment);
+		Environment getEnvironment();
+		void addBeanFactoryPostProcessor(BeanFactoryPostProcessor postProcessor);
+		void refresh() throws BeansException, IllegalStateException;
+		void close();
+		boolean isActive();
+	}
+	
+	提供ApplicationListener：
+	public class ApplicationListener implements EventListener {
+		void onApplicationEvent(ApplicationEvent event) {
+			System.out.println(event.toString());
+		}
+	}
+	使用到了ApplicationEvent.
+
+	AbstractApplicationContext的refresh规范化成几步(注意步骤之间的先后次序)：
+		postProcessBeanFactory(getBeanFactory());
+		registerBeanPostProcessors(getBeanFactory());
+		initApplicationEventPublisher();
+		onRefresh();
+		registerListeners();
+		finishRefresh();
+	并把这几步定义成abstract的：
+		abstract void postProcessBeanFactory(ConfigurableListableBeanFactory bf);
+		abstract void registerBeanPostProcessors(ConfigurableListableBeanFactory bf);
+		abstract void initApplicationEventPublisher();
+		abstract void onRefresh();
+		abstract void registerListeners();
+		abstract void finishRefresh();
+	
+	ClassPathXmlApplicationContext仍然是集成环境，不过现在简化了，继承了AbstractApplicationContext，
+	实现了这些abstract方法。
+	finishRefresh中会publishEvent(new ContextRefreshEvent("Context Refreshed..."));
+	
+	至此，我们的IoC就小有模样了。
+		

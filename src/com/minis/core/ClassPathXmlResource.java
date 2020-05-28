@@ -9,7 +9,7 @@ import org.dom4j.DocumentException;
 import org.dom4j.Element;
 import org.dom4j.io.SAXReader;
 
-import com.minis.beans.BeanDefinition;
+import com.minis.beans.factory.config.BeanDefinition;
 
 public class ClassPathXmlResource implements Resource {
 	Document document;
