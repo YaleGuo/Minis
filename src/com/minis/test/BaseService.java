@@ -1,6 +1,9 @@
 package com.minis.test;
 
+import com.minis.beans.factory.annotation.Autowired;
+
 public class BaseService {
+	@Autowired
 	private BaseBaseService bbs;
 	
 	public BaseBaseService getBbs() {
