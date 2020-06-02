@@ -1,11 +1,15 @@
 package com.minis.web;
 
+import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import javax.servlet.ServletConfig;
@@ -23,9 +27,14 @@ import com.minis.test.HelloWorldBean;
 public class DispatcherServlet extends HttpServlet {
 	private static final long serialVersionUID = 1L;
     private String sContextConfigLocation;
-    private Map<String,MappingValue> mappingValues;
-    private Map<String,Class<?>> mappingClz = new HashMap<>();
+    private List<String> packageNames = new ArrayList<>();
+    private Map<String,Object> controllerObjs = new HashMap<>();
+    private List<String> controllerNames = new ArrayList<>();
+    private Map<String,Class<?>> controllerClasses = new HashMap<>();
+    
+    private List<String> urlMappingNames = new ArrayList<>();
     private Map<String,Object> mappingObjs = new HashMap<>();
+    private Map<String,Method> mappingMethods = new HashMap<>();
 
     public DispatcherServlet() {
         super();
@@ -43,53 +52,98 @@ public class DispatcherServlet extends HttpServlet {
 		} catch (MalformedURLException e) {
 			e.printStackTrace();
 		}
+        
+        this.packageNames = XmlScanComponentHelper.getNodeValue(xmlPath);
 
-		Resource rs = new ClassPathXmlResource(xmlPath);
-        XmlConfigReader reader = new XmlConfigReader();
-        mappingValues = reader.loadConfig(rs);
         Refresh();
         
     }
     
     protected void Refresh() {
-    	for (Map.Entry<String,MappingValue> entry : mappingValues.entrySet()) {
-    		String id = entry.getKey();
-    		String className = entry.getValue().getClz();
+    	initController();
+    	initMapping();
+    }
+    
+    protected void initController() {
+    	this.controllerNames = scanPackages(this.packageNames);
+    	
+    	for (String controllerName : this.controllerNames) {
     		Object obj = null;
     		Class<?> clz = null;
+
 			try {
-				clz = Class.forName(className);
-				obj = clz.newInstance();
-			} catch (InstantiationException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (IllegalAccessException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				clz = Class.forName(controllerName);
+				this.controllerClasses.put(controllerName,clz);
 			} catch (ClassNotFoundException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			mappingClz.put(id, clz);
-    		mappingObjs.put(id, obj);
+			try {
+				obj = clz.newInstance();
+				this.controllerObjs.put(controllerName, obj);
+			} catch (InstantiationException e) {
+				e.printStackTrace();
+			} catch (IllegalAccessException e) {
+				e.printStackTrace();
+			}
+    	}
+    }
+    
+    private List<String> scanPackages(List<String> packages) {
+    	List<String> tempControllerNames = new ArrayList<>();
+    	for (String packageName : packages) {
+    		tempControllerNames.addAll(scanPackage(packageName));
+    	}
+    	return tempControllerNames;
+    }
+    
+    private List<String> scanPackage(String packageName) {
+    	List<String> tempControllerNames = new ArrayList<>();
+        URL url  =this.getClass().getClassLoader().getResource("/"+packageName.replaceAll("\\.", "/"));
+        File dir = new File(url.getFile());
+        for (File file : dir.listFiles()) {
+            if(file.isDirectory()){
+            	scanPackage(packageName+"."+file.getName());
+            }else{
+                String controllerName = packageName +"." +file.getName().replace(".class", "");
+                tempControllerNames.add(controllerName);
+            }
+        }
+        return tempControllerNames;
+    }
+    
+    protected void initMapping() {
+    	for (String controllerName : this.controllerNames) {
+    		Class<?> clazz = this.controllerClasses.get(controllerName);
+    		Object obj = this.controllerObjs.get(controllerName);
+    		Method[] methods = clazz.getDeclaredMethods();
+    		if(methods!=null){
+    			for(Method method : methods){
+    				boolean isRequestMapping = method.isAnnotationPresent(RequestMapping.class);
+    				if (isRequestMapping){
+    					String methodName = method.getName();
+    					String urlmapping = method.getAnnotation(RequestMapping.class).value();
+    					this.urlMappingNames.add(urlmapping);
+    					this.mappingObjs.put(urlmapping, obj);
+    					this.mappingMethods.put(urlmapping, method);
+    				}
+    			}
+    		}
     	}
     }
 
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 		String sPath = request.getServletPath();
-		if (this.mappingValues.get(sPath) == null) {
+System.out.println(sPath);		
+		if (!this.urlMappingNames.contains(sPath)) {
 			return;
 		}
 		
-		Class<?> clz = this.mappingClz.get(sPath);
-		Object obj = this.mappingObjs.get(sPath);
-		String methodName = this.mappingValues.get(sPath).getMethod();
+		Object obj = null;
 		Object objResult = null;
 		try {
-			Method method = clz.getMethod(methodName);
+			Method method = this.mappingMethods.get(sPath);
+			obj = this.mappingObjs.get(sPath);
 			objResult = method.invoke(obj);
-		} catch (NoSuchMethodException e) {
-			e.printStackTrace();
 		} catch (SecurityException e) {
 			e.printStackTrace();
 		} catch (IllegalAccessException e) {
