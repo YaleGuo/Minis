@@ -571,3 +571,96 @@ Preface
 	
 	至此，我们的IoC就小有模样了。
 		
+
+		
+-----------------------------------MVC--------------------------------------
+MVC的基本思路是屏蔽servlet的概念，让应用程序员只需要了解很少的servlet，主要写业务逻辑。浏览器访问的
+URL通过映射机制找到实际的业务逻辑方法。
+按照servlet规范，可以通过Filter拦截，也可以通过Servlet拦截。实际的实现过程中，我通过DispatcherServlet
+拦截所有请求，处理映射关系，调用业务逻辑代码，处理返回值回递给浏览器。
+程序员写的业务逻辑程序，我们叫做bean。
+
+1.
+	写了一个DispatcherServlet，由它来处理所有请求，初始化的时候从外部xml文件读取mapping信息：
+	  <servlet>
+	    <servlet-name>minisMVC</servlet-name>
+	    <servlet-class>com.minis.web.DispatcherServlet</servlet-class>
+	    <init-param>
+	      <param-name>contextConfigLocation</param-name>
+	      <param-value> /WEB-INF/minisMVC-servlet.xml </param-value>
+	    </init-param>
+	    <load-on-startup>1</load-on-startup>
+	  </servlet>
+	  <servlet-mapping>
+	    <servlet-name>minisMVC</servlet-name>
+	    <url-pattern>/</url-pattern>
+	  </servlet-mapping>
+	
+	定义外部minisMVC-servlet.xml文件格式：
+	<bean id="/helloworld" class="com.minis.test.HelloWorldBean" value="doGet" />
+
+	
+	DispatcherServlet内部记录在三个Map中，记录了URL对应的类对象和方法
+	    private Map<String,MappingValue> mappingValues;
+    	private Map<String,Class<?>> mappingClz = new HashMap<>();
+    	private Map<String,Object> mappingObjs = new HashMap<>();
+    
+    init()的核心代码：	
+    public void init(ServletConfig config) throws ServletException {
+    	super.init(config);
+    	
+        sContextConfigLocation = config.getInitParameter("contextConfigLocation");
+        
+        URL xmlPath = null;
+		xmlPath = this.getServletContext().getResource(sContextConfigLocation);
+		Resource rs = new ClassPathXmlResource(xmlPath);
+        XmlConfigReader reader = new XmlConfigReader();
+        mappingValues = reader.loadConfig(rs);
+        Refresh();
+    }
+	从上述代码可以看出，这个DispatcherServlet初始化的时候，由config(通过容器如Tomcat传入)
+	从外部的文件(由contextConfigLocation初始化参数定义)读取资源，把minisMVC-servlet.xml
+	定义的bean定义转换成内存结构Map<String,MappingValue> mappingValues。
+	读取外部文件，解析XML，生成内部结构，这些操作由ClassPathXmlResource和XmlConfigReader完成，
+	这个实现接近于IoC中的相应功能。未来回考虑合在一起。
+	最后调用它Refresh()实际创建bean.
+	
+	protected void Refresh() {
+    	for (Map.Entry<String,MappingValue> entry : mappingValues.entrySet()) {
+    		String id = entry.getKey();
+    		String className = entry.getValue().getClz();
+    		Object obj = null;
+    		Class<?> clz = null;
+    		
+			clz = Class.forName(className);
+			obj = clz.newInstance();
+
+			mappingClz.put(id, clz);
+    		mappingObjs.put(id, obj);
+    	}
+    }
+    Refresh()就是通过读取mappingValues中的bean定义，加载类，创建实例。
+    
+	这个servlet负责所有请求，我们先实现doGet:
+	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		String sPath = request.getServletPath();
+		
+		Class<?> clz = this.mappingClz.get(sPath);
+		Object obj = this.mappingObjs.get(sPath);
+		String methodName = this.mappingValues.get(sPath).getMethod();
+		Object objResult = null;
+
+		Method method = clz.getMethod(methodName);
+		objResult = method.invoke(obj);
+		
+		response.getWriter().append(objResult.toString());
+	}
+	这是一个框架实现，它从mappingClz，mappingObjs和mappingValues获取与当前请求url关联的bean信息，
+	然后调用实例的相关方法，返回结构通过response返回。
+	
+	这个实现很简陋，调用的方法没有参数，返回值只是String，回写直接通过response。
+	
+	
+  
+    	
+	
