@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans>
+	<bean id="bbs" class="com.test.service.BaseBaseService"> 
+	    <property type="com.test.service.AServiceImpl" name="as" ref="aservice"/>
+	</bean>
+	<bean id="aservice" class="com.test.service.AServiceImpl"> 
+		<constructor-arg type="String" name="name" value="abc"/>
+		<constructor-arg type="int" name="level" value="3"/>
+        <property type="String" name="property1" value="Someone says"/>
+        <property type="String" name="property2" value="Hello World!"/>
+        <property type="com.test.service.BaseService" name="ref1" ref="baseservice"/>
+	</bean>
+	<bean id="baseservice" class="com.test.service.BaseService"> 
+	</bean>
+
+	
+</beans>

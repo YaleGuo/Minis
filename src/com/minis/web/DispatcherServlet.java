@@ -19,13 +19,17 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import com.minis.test.HelloWorldBean;
+import com.minis.beans.BeansException;
+import com.minis.beans.factory.annotation.Autowired;
+import com.test.HelloWorldBean;
 
 /**
  * Servlet implementation class DispatcherServlet
  */
 public class DispatcherServlet extends HttpServlet {
 	private static final long serialVersionUID = 1L;
+	private WebApplicationContext webApplicationContext;
+	
     private String sContextConfigLocation;
     private List<String> packageNames = new ArrayList<>();
     private Map<String,Object> controllerObjs = new HashMap<>();
@@ -43,6 +47,8 @@ public class DispatcherServlet extends HttpServlet {
     @Override
     public void init(ServletConfig config) throws ServletException {
     	super.init(config);
+    	
+    	this.webApplicationContext = (WebApplicationContext) this.getServletContext().getAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE);
     	
         sContextConfigLocation = config.getInitParameter("contextConfigLocation");
         
@@ -79,14 +85,48 @@ public class DispatcherServlet extends HttpServlet {
 			}
 			try {
 				obj = clz.newInstance();
+				
+				populateBean(obj,controllerName);
+				
 				this.controllerObjs.put(controllerName, obj);
 			} catch (InstantiationException e) {
 				e.printStackTrace();
 			} catch (IllegalAccessException e) {
 				e.printStackTrace();
+			} catch (BeansException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
 			}
     	}
     }
+    
+	protected Object populateBean(Object bean, String beanName) throws BeansException {
+		Object result = bean;
+		
+		Class<?> clazz = bean.getClass();
+		Field[] fields = clazz.getDeclaredFields();
+		if(fields!=null){
+			for(Field field : fields){
+				boolean isAutowired = field.isAnnotationPresent(Autowired.class);
+				if(isAutowired){
+					String fieldName = field.getName();
+					Object autowiredObj = this.webApplicationContext.getBean(fieldName);
+					try {
+						field.setAccessible(true);
+						field.set(bean, autowiredObj);
+					} catch (IllegalArgumentException e) {
+						e.printStackTrace();
+					} catch (IllegalAccessException e) {
+						e.printStackTrace();
+					}
+
+				}
+			}
+		}
+		
+		return result;
+	}
+
     
     private List<String> scanPackages(List<String> packages) {
     	List<String> tempControllerNames = new ArrayList<>();
