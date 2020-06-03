@@ -1,0 +1,17 @@
+<component name="ArtifactManager">
+  <artifact type="exploded-war" name="Minis:Web exploded">
+    <output-path>$PROJECT_DIR$/out/artifacts/Minis_Web_exploded</output-path>
+    <root id="root">
+      <element id="javaee-facet-resources" facet="Minis/web/Web" />
+      <element id="directory" name="WEB-INF">
+        <element id="directory" name="classes">
+          <element id="module-output" name="Minis" />
+        </element>
+        <element id="directory" name="lib">
+          <element id="library" level="project" name="lib" />
+          <element id="file-copy" path="$PROJECT_DIR$/WebContent/WEB-INF/lib/dom4j-1.6.1.jar" />
+        </element>
+      </element>
+    </root>
+  </artifact>
+</component>

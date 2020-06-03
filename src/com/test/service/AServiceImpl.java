@@ -1,4 +1,4 @@
-package com.minis.test;
+package com.test.service;
 
 public class AServiceImpl implements AService {
 	private String name;
