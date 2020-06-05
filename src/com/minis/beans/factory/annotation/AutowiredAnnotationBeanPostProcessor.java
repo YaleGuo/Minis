@@ -25,6 +25,7 @@ public class AutowiredAnnotationBeanPostProcessor implements BeanPostProcessor {
 						field.setAccessible(true);
 						field.set(bean, autowiredObj);
 						System.out.println("autowire " + fieldName + " for bean " + beanName);
+						System.out.println("autowire " + fieldName + " for bean " + beanName + " : " + autowiredObj);
 					} catch (IllegalArgumentException e) {
 						e.printStackTrace();
 					} catch (IllegalAccessException e) {

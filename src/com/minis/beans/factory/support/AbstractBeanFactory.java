@@ -43,26 +43,31 @@ public abstract class AbstractBeanFactory extends DefaultSingletonBeanRegistry i
         	if (singleton == null) {
         		System.out.println("get bean null -------------- " + beanName);
         		BeanDefinition bd = beanDefinitionMap.get(beanName);
-            	singleton=createBean(bd);
-				this.registerBean(beanName, singleton);
-				
-				//beanpostprocessor
-				//step 1 : postProcessBeforeInitialization
-				applyBeanPostProcessorsBeforeInitialization(singleton, beanName);				
-
-				//step 2 : init-method
-				if (bd.getInitMethodName() != null && !bd.getInitMethodName().equals("")) {
-					invokeInitMethod(bd, singleton);
-				}
-
-				//step 3 : postProcessAfterInitialization
-				applyBeanPostProcessorsAfterInitialization(singleton, beanName);
+        		if (bd != null) {
+	            	singleton=createBean(bd);
+					this.registerBean(beanName, singleton);
+					
+					//beanpostprocessor
+					//step 1 : postProcessBeforeInitialization
+					applyBeanPostProcessorsBeforeInitialization(singleton, beanName);				
+	
+					//step 2 : init-method
+					if (bd.getInitMethodName() != null && !bd.getInitMethodName().equals("")) {
+						invokeInitMethod(bd, singleton);
+					}
+	
+					//step 3 : postProcessAfterInitialization
+					applyBeanPostProcessorsAfterInitialization(singleton, beanName);
+        		}
+        		else {
+        			return null;
+        		}
         	}
 				
         }
-        if (singleton == null) {
-        	throw new BeansException("bean is null.");
-        }
+//        if (singleton == null) {
+//        	throw new BeansException("bean is null.");
+//        }
         return singleton;
     }
     
@@ -171,6 +176,7 @@ public abstract class AbstractBeanFactory extends DefaultSingletonBeanRegistry i
     		
     		//handle constructor
     		ConstructorArgumentValues argumentValues = bd.getConstructorArgumentValues();
+    		if (argumentValues != null) {
     		if (!argumentValues.isEmpty()) {
         		Class<?>[] paramTypes = new Class<?>[argumentValues.getArgumentCount()];
         		Object[] paramValues =   new Object[argumentValues.getArgumentCount()];  
@@ -209,6 +215,10 @@ public abstract class AbstractBeanFactory extends DefaultSingletonBeanRegistry i
     		else {
     			obj = clz.newInstance();
     		}
+    		}
+    		else {
+    			obj = clz.newInstance();
+    		}
 
 		} catch (InstantiationException e) {
 			e.printStackTrace();
@@ -232,6 +242,7 @@ public abstract class AbstractBeanFactory extends DefaultSingletonBeanRegistry i
 		//handle properties
 		System.out.println("handle properties for bean : " + bd.getId());
 		PropertyValues propertyValues = bd.getPropertyValues();
+		if (propertyValues != null ) {
 		if (!propertyValues.isEmpty()) {
 			for (int i=0; i<propertyValues.size(); i++) {
 				PropertyValue propertyValue = propertyValues.getPropertyValueList().get(i);
@@ -294,7 +305,7 @@ public abstract class AbstractBeanFactory extends DefaultSingletonBeanRegistry i
     			
 			}
 		}
-		
+		}
 	}
 
 	abstract public Object applyBeanPostProcessorsBeforeInitialization(Object existingBean, String beanName)

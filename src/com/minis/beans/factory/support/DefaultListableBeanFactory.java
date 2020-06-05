@@ -12,7 +12,8 @@ import com.minis.beans.factory.config.ConfigurableListableBeanFactory;
 
 public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFactory 
 					implements ConfigurableListableBeanFactory{
-
+	ConfigurableListableBeanFactory parentBeanFctory;
+	
 	@Override
 	public int getBeanDefinitionCount() {
 		return this.beanDefinitionMap.size();
@@ -20,7 +21,7 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 
 	@Override
 	public String[] getBeanDefinitionNames() {
-		return (String[]) this.beanDefinitionNames.toArray();
+		return (String[])this.beanDefinitionNames.toArray(new String[this.beanDefinitionNames.size()]);
 	}
 
 	@Override
@@ -57,5 +58,19 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 		}
 		return result;
 	}
+
+	public void setParent(ConfigurableListableBeanFactory beanFactory) {
+		this.parentBeanFctory = beanFactory;
+	}
+	
+	@Override
+    public Object getBean(String beanName) throws BeansException{
+    	Object result = super.getBean(beanName);
+    	if (result == null) {
+    		result = this.parentBeanFctory.getBean(beanName);
+    	}
+    	
+    	return result;
+    }
 
 }

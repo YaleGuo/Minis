@@ -11,7 +11,7 @@
   </listener>
   <servlet>
     <servlet-name>minisMVC</servlet-name>
-    <servlet-class>com.minis.web.DispatcherServlet</servlet-class>
+    <servlet-class>com.minis.web.servlet.DispatcherServlet</servlet-class>
     <init-param>
       <param-name>contextConfigLocation</param-name>
       <param-value> /WEB-INF/minisMVC-servlet.xml </param-value>
