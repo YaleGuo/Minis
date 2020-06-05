@@ -767,6 +767,7 @@ URL通过映射机制找到实际的业务逻辑方法。
 	doGet方法还是没有变化。
 	
 	
+	
 3.
 	现在我们把IoC和MVC结合在一起。使得mvc controller这一层可以引用到内部的bean。
 	
@@ -838,3 +839,150 @@ URL通过映射机制找到实际的业务逻辑方法。
 	但是注意，反过来是拿不到的，这个单向的引用必须记住。
 	
 	
+4.
+	现在有了AnnotationConfigWebApplicationContext和DispatcherServlet，我们按照分工，整理一下代码。
+	我们希望DispatcherServlet最后只负责解析request请求，解析，分发，处理返回。而ApplicationContext
+	则负责业务逻辑beans。
+	注意到由于web的引入，业务逻辑程序分层了两层：controller和service，原理上这两层是可以完全分开的。
+	为了使得结构化更好，我们引入两个application context：一个针对controller层，一个针对service层。
+	service层的由listener启动的application context容器负责，而controller层的由DispatcherServlet负责启动。
+	按照时序，listener先启动，我们把它叫做parentApplicationContext。DispatcherServlet启动的webapplicationcontext
+	持有对parentApplicationContext的引用。
+	
+	程序实现上，分别用的XmlWebApplicationContext和AnnotationConfigWebApplicationContext。
+	
+	DispatcherServlet类中使用两个变量：
+	private WebApplicationContext webApplicationContext;
+	private WebApplicationContext parentApplicationContext;
+	
+	初始化的时候先从servletcontext中拿属性WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE，
+	获得listener存放在这里的parentApplicationContext；然后通过contextConfigLocation配置文件创建一个新的
+	webApplicationContext。
+	代码如下：
+    public void init(ServletConfig config) throws ServletException {
+    	super.init(config);
+    	this.parentApplicationContext = 
+    			(WebApplicationContext) this.getServletContext().getAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE);
+    	
+        sContextConfigLocation = config.getInitParameter("contextConfigLocation");
+    	this.webApplicationContext = new AnnotationConfigWebApplicationContext(sContextConfigLocation,this.parentApplicationContext);
+
+        Refresh();
+    }
+
+	扩充AnnotationConfigWebApplicationContext，把DispatcherServlet中一部分与扫描包有关的代码挪到这里.
+	public class AnnotationConfigWebApplicationContext 
+						extends AbstractApplicationContext implements WebApplicationContext{
+		private WebApplicationContext parentApplicationContext;
+		private ServletContext servletContext;
+		DefaultListableBeanFactory beanFactory;
+		private final List<BeanFactoryPostProcessor> beanFactoryPostProcessors =
+				new ArrayList<BeanFactoryPostProcessor>();	
+	}
+
+	public WebApplicationContext(String fileName, WebApplicationContext parentApplicationContext) {
+		this.parentApplicationContext = parentApplicationContext;
+		this.servletContext = this.parentApplicationContext.getServletContext();
+        URL xmlPath = null;
+
+		xmlPath = this.getServletContext().getResource(fileName);
+        List<String> packageNames = XmlScanComponentHelper.getNodeValue(xmlPath);
+        List<String> controllerNames = scanPackages(packageNames);
+
+    	DefaultListableBeanFactory bf = new DefaultListableBeanFactory();
+        this.beanFactory = bf;
+        this.beanFactory.setParent(this.parentApplicationContext.getBeanFactory());
+        loadBeanDefinitions(controllerNames);
+        
+		refresh();
+	}
+	
+	至此，web环境下的两个applicationcontext都构建好了，WebApplicationContext持有对parentApplicationContext的引用，
+	反过来并不持有，单向的引用。
+	所以会在WebApplicationContext和parentApplicationContext分别包含beans，这样getBean()的时候要考虑这一层关系，
+	先从WebApplicationContext中拿，拿不到的话，再从parentApplicationContext拿。
+
+
+
+5.
+	我们接下来继续扩展dispatcher。
+	以前是在doGet()中进行的如下实现：
+		Method method = this.mappingMethods.get(sPath);
+		obj = this.mappingObjs.get(sPath);
+		objResult = method.invoke(obj);
+		response.getWriter().append(objResult.toString());
+	简单地根据uri找对应的method和object，然后调用，最后把返回值写到response里。	
+	增加了RequestMappingHandlerMapping和RequestMappingHandlerAdapter，分别负责
+	包装请求对应的映射和具体的处理过程。
+	
+	以前在dispatcher中存放的映射数据如下：
+	private List<String> urlMappingNames = new ArrayList<>();
+    private Map<String,Object> mappingObjs = new HashMap<>();
+    private Map<String,Method> mappingMethods = new HashMap<>();
+    
+	现在不再放在dispatcher中了，取而代之的是在dispatcher中存放：
+	private HandlerMapping handlerMapping;
+	private HandlerAdapter handlerAdapter;
+
+	在	handlerMapping中通过MappingRegistry存放映射数据：
+	public class RequestMappingHandlerMapping implements HandlerMapping {
+		WebApplicationContext wac;
+		private final MappingRegistry mappingRegistry = new MappingRegistry();
+	}
+	public class MappingRegistry {
+	    private List<String> urlMappingNames = new ArrayList<>();
+	    private Map<String,Object> mappingObjs = new HashMap<>();
+	    private Map<String,Method> mappingMethods = new HashMap<>();
+    }
+	
+	初始化过程：
+	DispatcherServlet中refresh()	{
+    	initController();
+    	
+		initHandlerMappings(this.webApplicationContext);
+		initHandlerAdapters(this.webApplicationContext);
+    }
+    protected void initHandlerMappings(WebApplicationContext wac) {
+    	this.handlerMapping = new RequestMappingHandlerMapping(wac);
+    }
+    protected void initHandlerAdapters(WebApplicationContext wac) {
+    	this.handlerAdapter = new RequestMappingHandlerAdapter(wac);
+    }
+	
+	类RequestMappingHandlerMapping对外提供一个getHandler，通过uri拿到method调用。
+    public HandlerMethod getHandler(HttpServletRequest request) throws Exception {
+		String sPath = request.getServletPath();
+	
+		Method method = this.mappingRegistry.getMappingMethods().get(sPath);
+		Object obj = this.mappingRegistry.getMappingObjs().get(sPath);
+		HandlerMethod handlerMethod = new HandlerMethod(method, obj);
+		
+		return handlerMethod;
+	}
+    
+	具体的调用方法包装成
+	public HandlerMethod(Method method, Object obj) {
+		this.setMethod(method);
+		this.setBean(obj);	
+	}
+	
+	dispatcher在分发的时候变成通过：
+	protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		HttpServletRequest processedRequest = request;
+		HandlerMethod handlerMethod = this.handlerMapping.getHandler(processedRequest);
+		HandlerAdapter ha = this.handlerAdapter;
+
+		ha.handle(processedRequest, response, handlerMethod);
+	}
+	即通过handlerMapping拿到对应的handlerMethod，然后通过HandlerAdapter进行处理。
+	
+	HandlerAdapter通过反射invoke具体的方法并处理返回数据(现在仍然只是简单地写到response)：
+		Method method = handler.getMethod();
+		Object obj = handler.getBean();
+		Object objResult = null;
+		objResult = method.invoke(obj);
+		response.getWriter().append(objResult.toString());
+	
+
+	
+
