@@ -983,6 +983,105 @@ URL通过映射机制找到实际的业务逻辑方法。
 		objResult = method.invoke(obj);
 		response.getWriter().append(objResult.toString());
 	
-
 	
 
+6.
+	提供WebDataBinder,代表的是内部的一个目标对象:
+	public WebDataBinder(Object target, String targetName) {
+		this.target = target;
+		this.objectName = targetName;
+		this.clz = this.target.getClass();
+	}
+	
+	WebDataBinder通过doBind()把Request里面的参数自动转成一个对象，过程如下：
+	先从request中把参数转成内部的PropertyValues，经过整理(addBindValues())：
+	public void bind(HttpServletRequest request) {
+		PropertyValues mpvs = assignParameters(request);
+		addBindValues(mpvs, request);
+		doBind(mpvs);
+	}
+	注1：PropertyValues是复用了IoC中的。
+	注2：assignParameters()简单地拿到request中所有参数，所以这里对多个对象处理不好
+	
+	然后调用doBind():
+	private void doBind(PropertyValues mpvs) {
+		applyPropertyValues(mpvs);	
+	}
+	protected void applyPropertyValues(PropertyValues mpvs) {
+		getPropertyAccessor().setPropertyValues(mpvs);
+	}
+	protected BeanWrapperImpl getPropertyAccessor() {
+		return new BeanWrapperImpl(this.target);
+	}
+	
+	BeanWrapperImpl实现了PropertyEditorRegistrySupport，这个里面事先注册了CustomNumberEditor
+	和StringEditor。
+		this.defaultEditors.put(int.class, new CustomNumberEditor(Integer.class, false));
+		this.defaultEditors.put(Integer.class, new CustomNumberEditor(Integer.class, true));
+		this.defaultEditors.put(long.class, new CustomNumberEditor(Long.class, false));
+		this.defaultEditors.put(Long.class, new CustomNumberEditor(Long.class, true));
+		this.defaultEditors.put(float.class, new CustomNumberEditor(Float.class, false));
+		this.defaultEditors.put(Float.class, new CustomNumberEditor(Float.class, true));
+		this.defaultEditors.put(double.class, new CustomNumberEditor(Double.class, false));
+		this.defaultEditors.put(Double.class, new CustomNumberEditor(Double.class, true));
+		this.defaultEditors.put(BigDecimal.class, new CustomNumberEditor(BigDecimal.class, true));
+		this.defaultEditors.put(BigInteger.class, new CustomNumberEditor(BigInteger.class, true));
+
+		this.defaultEditors.put(String.class, new StringEditor(String.class, true));
+	这些Editor关键是实现如下方法：
+		void setAsText(String text);
+		void setValue(Object value);
+		Object getValue();
+		String getAsText();
+	把格式字符串与Object进行转换，这样支持不同的数字时间格式，把一个串写进去，读一个object出来。
+	
+	BeanWrapperImpl用这些Editor这么实现值的写入：
+	public void setPropertyValue(PropertyValue pv) {
+		//拿到合适的getter和setter handler
+		BeanPropertyHandler propertyHandler = new BeanPropertyHandler(pv.getName());
+		//拿到一个相应类型的Editor
+		PropertyEditor pe = this.getDefaultEditor(propertyHandler.getPropertyClz());
+		pe.setAsText((String) pv.getValue());
+		propertyHandler.setValue(pe.getValue());
+	}
+	
+	
+	有了这个WebDataBinder,我们再提供一个WebDataBinderFactory包装一下：
+	public class WebDataBinderFactory {
+		public WebDataBinder createBinder(HttpServletRequest request, Object target, String objectName) {
+			WebDataBinder wbd= new WebDataBinder(target,objectName);
+			initBinder(wbd, request);
+			return wbd;
+		}
+		protected void initBinder(WebDataBinder dataBinder, HttpServletRequest request){
+		}
+	}
+
+	在RequestMappingHandlerAdapter中handleInternal改写方法：
+	protected void invokeHandlerMethod(HttpServletRequest request,
+						HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+		WebDataBinderFactory binderFactory = new WebDataBinderFactory();
+		
+		//获取调用方法的所有参数
+		Parameter[] methodParameters = handlerMethod.getMethod().getParameters();
+		Object[] methodParamObjs = new Object[methodParameters.length];
+		int i = 0;
+		for (Parameter methodParameter : methodParameters) {
+			//对某个参数，新创建一个空的对象，这个就是要bind的目标
+			Object methodParamObj = methodParameter.getType().newInstance();
+			//对这个参数实现bind
+			WebDataBinder wdb = binderFactory.createBinder(request, methodParamObj, methodParameter.getName());
+			wdb.bind(request);
+			methodParamObjs[i] = methodParamObj;
+			i++;
+		}
+		//至此bind了方法中的所有参数，可以调用了
+		Method invocableMethod = handlerMethod.getMethod();
+		Object returnobj = invocableMethod.invoke(handlerMethod.getBean(), methodParamObjs);
+		
+		response.getWriter().append(returnobj.toString());
+	}
+	
+	至此，我们就通过RequestMappingHandlerAdapter中的invokeHandlerMethod把request中的参数自动
+	转成了内部的对象。
+	但是我们的实现不好，对多个参数处理不好，另外如果方法中有HttpRequest参数也没有跳过。
