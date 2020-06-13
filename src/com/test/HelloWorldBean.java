@@ -19,4 +19,10 @@ public class HelloWorldBean {
 	@RequestMapping("/test3")
 	public String doTest3() {
 		return baseservice.getHello();
-	}}
+	}
+	@RequestMapping("/test4")
+	public String doTest4(User user) {
+		return user.getId() +" "+user.getName();
+	}
+	
+}
