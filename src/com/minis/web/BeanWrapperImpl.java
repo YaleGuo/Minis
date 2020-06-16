@@ -4,56 +4,43 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
+import com.minis.beans.AbstractPropertyAccessor;
 import com.minis.beans.PropertyEditor;
 import com.minis.beans.PropertyEditorRegistrySupport;
 import com.minis.beans.PropertyValue;
 import com.minis.beans.PropertyValues;
 
-public class BeanWrapperImpl extends PropertyEditorRegistrySupport {
+public class BeanWrapperImpl extends AbstractPropertyAccessor {
 	Object wrappedObject;
 	Class<?> clz;
-	PropertyValues pvs;
 	
 	public BeanWrapperImpl(Object object) {
-		registerDefaultEditors();
+		super();	
 		this.wrappedObject = object;
 		this.clz = object.getClass();
-System.out.println(this.clz);		
 	}
 
-	
-	public void setBeanInstance(Object object) {
-		this.wrappedObject = object;
-	}
-	public Object getBeanInstance() {
-		return this.wrappedObject;
-	}
-	
-	
-	public void setPropertyValues(PropertyValues pvs) {
-		this.pvs = pvs;
-		for (PropertyValue pv : this.pvs.getPropertyValues()) {
-			setPropertyValue(pv);
-		}
-	}
-	
+	@Override
 	public void setPropertyValue(PropertyValue pv) {
 		BeanPropertyHandler propertyHandler = new BeanPropertyHandler(pv.getName());
-		PropertyEditor pe = this.getDefaultEditor(propertyHandler.getPropertyClz());
-		pe.setAsText((String) pv.getValue());
-System.out.println("getClass:"+pe.getClass());
-System.out.println("getValue:"+pe.getValue());
-System.out.println("getAsText:"+pe.getAsText());
-
-
-		propertyHandler.setValue(pe.getValue());
+		PropertyEditor pe = this.getCustomEditor(propertyHandler.getPropertyClz());
+		if (pe == null) {
+			pe = this.getDefaultEditor(propertyHandler.getPropertyClz());
+			
+		}
+		if (pe != null) {
+			pe.setAsText((String) pv.getValue());
+			propertyHandler.setValue(pe.getValue());
+		}
+		else {
+			propertyHandler.setValue(pv.getValue());			
+		}
 
 	}
 
 	class BeanPropertyHandler {
 		Method writeMethod = null;
 		Method readMethod = null;
-		//PropertyEditor pe = null;
 		Class<?> propertyClz = null;
 		
 		public Class<?> getPropertyClz() {

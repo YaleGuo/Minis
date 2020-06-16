@@ -4,6 +4,8 @@ import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
 
+import com.minis.beans.AbstractPropertyAccessor;
+import com.minis.beans.PropertyEditor;
 import com.minis.beans.PropertyValues;
 import com.minis.util.WebUtils;
 
@@ -12,6 +14,7 @@ public class WebDataBinder {
 	private Class<?> clz;
 
 	private String objectName;
+	AbstractPropertyAccessor propertyAccessor;
 	
 	public WebDataBinder(Object target) {
 		this(target,"");
@@ -20,6 +23,7 @@ public class WebDataBinder {
 		this.target = target;
 		this.objectName = targetName;
 		this.clz = this.target.getClass();
+		this.propertyAccessor = new BeanWrapperImpl(this.target);
 	}
 	
 	public void bind(HttpServletRequest request) {
@@ -37,14 +41,18 @@ public class WebDataBinder {
 		getPropertyAccessor().setPropertyValues(mpvs);
 	}
 	
-	protected BeanWrapperImpl getPropertyAccessor() {
-		return new BeanWrapperImpl(this.target);
+	protected AbstractPropertyAccessor getPropertyAccessor() {
+		return this.propertyAccessor;
 	}
 	
 	private PropertyValues assignParameters(HttpServletRequest request) {
 		Map<String,Object> map = WebUtils.getParametersStartingWith(request, "");
 		
 		return new PropertyValues(map);
+	}
+	
+	public void registerCustomEditor(Class<?> requiredType, PropertyEditor propertyEditor) {
+		getPropertyAccessor().registerCustomEditor(requiredType, propertyEditor);
 	}
 	
 	protected void addBindValues(PropertyValues mpvs, HttpServletRequest request) {

@@ -1085,3 +1085,245 @@ URL通过映射机制找到实际的业务逻辑方法。
 	至此，我们就通过RequestMappingHandlerAdapter中的invokeHandlerMethod把request中的参数自动
 	转成了内部的对象。
 	但是我们的实现不好，对多个参数处理不好，另外如果方法中有HttpRequest参数也没有跳过。
+	
+	
+
+7.
+	支持自定义的CustomEditor，实现PropertyEditor接口：
+	public interface PropertyEditor {
+		void setAsText(String text);
+		void setValue(Object value);
+		Object getValue();
+		String getAsText();
+	}
+	把格式字符串与Object进行转换，这样支持不同的数字时间或者别的类型的格式，把一个串写进去，读一个object出来，
+	如CustomDateEditor。
+	
+	系统提供一个WebBindingInitializer接口，用它注册自定义的CustomEditor:
+	public interface WebBindingInitializer {
+		void initBinder(WebDataBinder binder);
+	}
+	
+	应用程序员自己实现一个WebBindingInitializer，在initBinder中注册自定义Editor，如自定义日期格式：
+	public class DateInitializer implements WebBindingInitializer{
+	@Override
+	public void initBinder(WebDataBinder binder) {
+		binder.registerCustomEditor(Date.class, new CustomDateEditor(Date.class,"yyyy-MM-dd", false));
+	}
+	这个CustomDateEditor类的构造方法：
+		public CustomDateEditor(Class<Date> dateClass,
+				String pattern, boolean allowEmpty) throws IllegalArgumentException {
+			this.dateClass = dateClass;
+			this.datetimeFormatter = DateTimeFormatter.ofPattern(pattern);
+			this.allowEmpty = allowEmpty;
+		}
+		
+	RequestMappingHandlerAdapter中增加一个属性：
+		WebBindingInitializer webBindingInitializer
+	构造方法中从getBean("webBindingInitializer")
+	public RequestMappingHandlerAdapter(WebApplicationContext wac) {
+		this.wac = wac;
+		this.webBindingInitializer = (WebBindingInitializer) this.wac.getBean("webBindingInitializer");
+	}
+	也就是说用户通过applicationContext.xml配置webBindingInitializer：
+		<bean id="webBindingInitializer" class="com.test.DateInitializer"> 
+		</bean>
+
+	然后HandlerAdapter修改为：
+		protected void invokeHandlerMethod(HttpServletRequest request,
+			HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+
+		for (Parameter methodParameter : methodParameters) {
+			//对某个参数，新创建一个空的对象，这个就是要bind的目标
+			Object methodParamObj = methodParameter.getType().newInstance();
+			//对这个参数实现bind
+			WebDataBinder wdb = binderFactory.createBinder(request, methodParamObj, methodParameter.getName());
+			webBindingInitializer.initBinder(wdb); //注册binder中的editor
+			wdb.bind(request);
+			methodParamObjs[i] = methodParamObj;
+			i++;
+		}
+
+	BeanWrapperImpl所继承的类 PropertyEditorRegistrySupport 增加customEditors属性：
+		private Map<Class<?>, PropertyEditor> defaultEditors;
+		private Map<Class<?>, PropertyEditor> customEditors;
+	
+	最后BeanWrapperImpl修改为先取CustomEditor再取DefaultEditor：
+	public void setPropertyValue(PropertyValue pv) {
+		BeanPropertyHandler propertyHandler = new BeanPropertyHandler(pv.getName());
+		PropertyEditor pe = this.getCustomEditor(propertyHandler.getPropertyClz());
+		if (pe == null) {
+			pe = this.getDefaultEditor(propertyHandler.getPropertyClz());
+			
+		}
+		if (pe != null) {
+			pe.setAsText((String) pv.getValue());
+			propertyHandler.setValue(pe.getValue());
+		}
+		else {
+			propertyHandler.setValue(pv.getValue());			
+		}
+	}
+	
+	这样，就支持了用户自定义的CustomEditor.
+
+
+
+8.
+	支持@ResponseBody
+	增加从controller返回给前端的字符流数据格式转换支持。
+	public interface HttpMessageConverter {
+		void write(Object obj, HttpServletResponse response) throws IOException;
+	}
+	给了一个默认的实现：DefaultHttpMessageConverter，把object转成Json串。
+		String defaultContentType = "text/json;charset=UTF-8";
+		String defaultCharacterEncoding = "UTF-8";
+		ObjectMapper objectMapper;
+		
+		public void write(Object obj, HttpServletResponse response) throws IOException {
+	        response.setContentType(defaultContentType);
+	        response.setCharacterEncoding(defaultCharacterEncoding);
+	        writeInternal(obj, response);
+	        response.flushBuffer();
+		}
+		private void writeInternal(Object obj, HttpServletResponse response) throws IOException{
+			String sJsonStr = this.objectMapper.writeValuesAsString(obj);
+			PrintWriter pw = response.getWriter();
+			pw.write(sJsonStr);
+		}
+		
+	
+	定义一个ObjectMapper:
+		public interface ObjectMapper {
+			void setDateFormat(String dateFormat);
+			void setDecimalFormat(String decimalFormat);
+			String writeValuesAsString(Object obj);
+		}
+	给了一个默认的实现：DefaultObjectMapper，在	writeValuesAsString中拼JSon串。
+			if (value instanceof Date) {
+				LocalDate localDate = ((Date)value).toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+				strValue = localDate.format(this.datetimeFormatter);
+			}
+			else if (value instanceof BigDecimal || value instanceof Double || value instanceof Float){
+				strValue = this.decimalFormatter.format(value);
+			}
+			else {
+				strValue = value.toString();
+			}
+	目前为止，我们也只支持Date, Number和String三种类型。
+	
+	RequestMappingHandlerAdapter增加两个属性：
+	public class RequestMappingHandlerAdapter implements HandlerAdapter {
+		private WebBindingInitializer webBindingInitializer = null;
+		private HttpMessageConverter messageConverter = null;
+
+	方法invokeHandlerMethod()增加	messageConverter 处理:	
+	protected ModelAndView invokeHandlerMethod(HttpServletRequest request,
+			HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+			
+			... ...
+			
+			if (invocableMethod.isAnnotationPresent(ResponseBody.class)){ //ResponseBody
+		        this.messageConverter.write(returnObj, response);
+			}
+			
+			... ...
+	}
+		
+	
+	这些webBindingInitializer和messageConverter都通过配置注入：
+	<bean id="handlerAdapter" class="com.minis.web.servlet.RequestMappingHandlerAdapter"> 
+	 <property type="com.minis.web.HttpMessageConverter" name="messageConverter" ref="messageConverter"/>
+	 <property type="com.minis.web.WebBindingInitializer" name="webBindingInitializer" ref="webBindingInitializer"/>
+	</bean>
+	
+	<bean id="webBindingInitializer" class="com.test.DateInitializer" /> 
+	
+	<bean id="messageConverter" class="com.minis.web.DefaultHttpMessageConverter"> 
+	 <property type="com.minis.web.ObjectMapper" name="objectMapper" ref="objectMapper"/>
+	</bean>
+	<bean id="objectMapper" class="com.minis.web.DefaultObjectMapper" >
+	 <property type="String" name="dateFormat" value="yyyy/MM/dd"/>
+	 <property type="String" name="decimalFormat" value="###.##"/>
+	</bean>
+	
+	DispatcherServlet中通过getBean获取handlerAdapter（约定一个名字）。
+	protected void initHandlerAdapters(WebApplicationContext wac) {
+ 		this.handlerAdapter = (HandlerAdapter) wac.getBean(HANDLER_ADAPTER_BEAN_NAME);
+    }
+    
+	客户程序HelloWorldBean:
+		@RequestMapping("/test7")
+		@ResponseBody
+		public User doTest7(User user) {
+			user.setName(user.getName() + "---");
+			user.setBirthday(new Date());
+			return user;
+		}	
+    
+	完成数据的转换之后，我们接着实现ModelAndView：
+	public class ModelAndView {
+		private Object view;
+		private Map<String, Object> model = new HashMap<>();
+	}
+	
+	类RequestMappingHandlerAdapter的	方法invokeHandlerMethod() 返回值改为ModelAndView:	
+		protected ModelAndView invokeHandlerMethod(HttpServletRequest request,
+			HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+
+			... ...
+					
+			ModelAndView mav = null;
+			if (invocableMethod.isAnnotationPresent(ResponseBody.class)){ //ResponseBody
+		        this.messageConverter.write(returnObj, response);
+			}
+			else {
+				if (returnObj instanceof ModelAndView) {
+					mav = (ModelAndView)returnObj;
+				}
+				else if(returnObj instanceof String) {
+					String sTarget = (String)returnObj;
+					mav = new ModelAndView();
+					mav.setViewName(sTarget);
+				}
+			}
+			
+			return mav;
+		}
+	
+	DispatcherServlet修改：
+	protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		HttpServletRequest processedRequest = request;
+		HandlerMethod handlerMethod = null;
+		ModelAndView mv = null;
+		
+		handlerMethod = this.handlerMapping.getHandler(processedRequest);
+		mv = ha.handle(processedRequest, response, handlerMethod);
+
+		render(processedRequest, response, mv);
+	}
+	
+	//用jsp 进行render
+	protected void render( HttpServletRequest request, HttpServletResponse response,ModelAndView mv) throws Exception {
+		if (mv == null) { //@ResponseBody
+			response.getWriter().flush();
+			response.getWriter().close();
+			return;
+		}
+		//获取model，写到request的Attribute中：
+		Map<String, Object> modelMap = mv.getModel();
+		for (Map.Entry<String, Object> e : modelMap.entrySet()) {
+			request.setAttribute(e.getKey(),e.getValue());
+		}
+		
+		String sTarget = mv.getViewName();
+		String sPath = "/" + sTarget + ".jsp";
+		request.getRequestDispatcher(sPath).forward(request, response);
+	}
+	
+	客户程序HelloWorldBean:
+		@RequestMapping("/test5")
+		public ModelAndView doTest5(User user) {
+			ModelAndView mav = new ModelAndView("test","msg",user.getName());
+			return mav;
+		}

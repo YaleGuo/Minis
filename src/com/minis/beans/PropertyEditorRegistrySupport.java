@@ -10,6 +10,10 @@ public class PropertyEditorRegistrySupport {
 	private Map<Class<?>, PropertyEditor> defaultEditors;
 	private Map<Class<?>, PropertyEditor> customEditors;
 
+	public PropertyEditorRegistrySupport() {
+		registerDefaultEditors();
+	}
+	
 	protected void registerDefaultEditors() {
 		createDefaultEditors();
 	}
@@ -54,7 +58,7 @@ public class PropertyEditorRegistrySupport {
 		return (elementType != null && this.customEditors != null && this.customEditors.containsKey(elementType));
 	}
 
-	private PropertyEditor getCustomEditor( Class<?> requiredType) {
+	public PropertyEditor getCustomEditor( Class<?> requiredType) {
 		if (requiredType == null || this.customEditors == null) {
 			return null;
 		}
