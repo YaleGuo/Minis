@@ -10,8 +10,25 @@
         <property type="String" name="property2" value="Hello World!"/>
         <property type="com.test.service.BaseService" name="ref1" ref="baseservice"/>
 	</bean>
-	<bean id="baseservice" class="com.test.service.BaseService"> 
+	<bean id="baseservice" class="com.test.service.BaseService" /> 
+	
+	
+	<bean id="handlerAdapter" class="com.minis.web.servlet.RequestMappingHandlerAdapter"> 
+	 <property type="com.minis.web.HttpMessageConverter" name="messageConverter" ref="messageConverter"/>
+	 <property type="com.minis.web.WebBindingInitializer" name="webBindingInitializer" ref="webBindingInitializer"/>
 	</bean>
-
+	
+	<bean id="webBindingInitializer" class="com.test.DateInitializer" /> 
+	<bean id="messageConverter" class="com.minis.web.DefaultHttpMessageConverter"> 
+	 <property type="com.minis.web.ObjectMapper" name="objectMapper" ref="objectMapper"/>
+	</bean>
+	<bean id="objectMapper" class="com.minis.web.DefaultObjectMapper" >
+	 <property type="String" name="dateFormat" value="yyyy/MM/dd"/>
+	 <property type="String" name="decimalFormat" value="###.##"/>
+	</bean>> 
+	
+	
+	
+	
 	
 </beans>

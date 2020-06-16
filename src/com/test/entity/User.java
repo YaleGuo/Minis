@@ -1,4 +1,6 @@
-package com.test;
+package com.test.entity;
+
+import java.util.Date;
 
 public class User {
 	int id = 1;
@@ -16,6 +18,15 @@ public class User {
 	}
 	public void setName(String name) {
 		this.name = name;
+	}
+	
+	Date birthday = new Date();
+
+	public Date getBirthday() {
+		return birthday;
+	}
+	public void setBirthday(Date birthday) {
+		this.birthday = birthday;
 	}
 	
 }

@@ -11,11 +11,11 @@ import com.minis.web.RequestMapping;
 import com.minis.web.WebApplicationContext;
 
 public class RequestMappingHandlerMapping implements HandlerMapping {
-	WebApplicationContext wac;
+	WebApplicationContext webApplicationContext;
 	private final MappingRegistry mappingRegistry = new MappingRegistry();
 	
-	public RequestMappingHandlerMapping(WebApplicationContext wac) {
-		this.wac = wac;
+	public RequestMappingHandlerMapping(WebApplicationContext webApplicationContext) {
+		this.webApplicationContext = webApplicationContext;
 		
 		initMapping();
 	}
@@ -23,7 +23,7 @@ public class RequestMappingHandlerMapping implements HandlerMapping {
     protected void initMapping() {
     	Class<?> clz = null;
     	Object obj = null;
-    	String[] controllerNames = this.wac.getBeanDefinitionNames();
+    	String[] controllerNames = this.webApplicationContext.getBeanDefinitionNames();
     	for (String controllerName : controllerNames) {
 			try {
 				clz = Class.forName(controllerName);
@@ -31,7 +31,7 @@ public class RequestMappingHandlerMapping implements HandlerMapping {
 				e1.printStackTrace();
 			}
 			try {
-				obj = this.wac.getBean(controllerName);
+				obj = this.webApplicationContext.getBean(controllerName);
 			} catch (BeansException e) {
 				e.printStackTrace();
 			}
