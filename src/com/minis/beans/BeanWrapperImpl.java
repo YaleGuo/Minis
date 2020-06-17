@@ -1,14 +1,8 @@
-package com.minis.web;
+package com.minis.beans;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-
-import com.minis.beans.AbstractPropertyAccessor;
-import com.minis.beans.PropertyEditor;
-import com.minis.beans.PropertyEditorRegistrySupport;
-import com.minis.beans.PropertyValue;
-import com.minis.beans.PropertyValues;
 
 public class BeanWrapperImpl extends AbstractPropertyAccessor {
 	Object wrappedObject;

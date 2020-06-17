@@ -2,8 +2,8 @@ package com.test;
 
 import java.util.Date;
 
-import com.minis.web.WebBindingInitializer;
-import com.minis.web.WebDataBinder;
+import com.minis.web.bind.WebDataBinder;
+import com.minis.web.bind.support.WebBindingInitializer;
 
 public class DateInitializer implements WebBindingInitializer{
 	@Override

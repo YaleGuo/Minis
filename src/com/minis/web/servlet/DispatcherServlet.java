@@ -11,8 +11,10 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import com.minis.beans.BeansException;
-import com.minis.web.AnnotationConfigWebApplicationContext;
-import com.minis.web.WebApplicationContext;
+import com.minis.web.context.WebApplicationContext;
+import com.minis.web.context.support.AnnotationConfigWebApplicationContext;
+import com.minis.web.method.HandlerMethod;
+import com.minis.web.method.annotation.RequestMappingHandlerMapping;
 
 /**
  * Servlet implementation class DispatcherServlet
@@ -70,7 +72,11 @@ public class DispatcherServlet extends HttpServlet {
     }
     
     protected void initHandlerMappings(WebApplicationContext wac) {
-    	this.handlerMapping = new RequestMappingHandlerMapping(wac);
+    	try {
+			this.handlerMapping = (HandlerMapping) wac.getBean(HANDLER_MAPPING_BEAN_NAME);
+		} catch (BeansException e) {
+			e.printStackTrace();
+		}
     	
     }
     protected void initHandlerAdapters(WebApplicationContext wac) {
@@ -82,7 +88,11 @@ public class DispatcherServlet extends HttpServlet {
     	
     }
     protected void initViewResolvers(WebApplicationContext wac) {
-    	
+    	try {
+			this.viewResolver = (ViewResolver) wac.getBean(VIEW_RESOLVER_BEAN_NAME);
+		} catch (BeansException e) {
+			e.printStackTrace();
+		}
     }
     
 	@Override
@@ -124,13 +134,9 @@ public class DispatcherServlet extends HttpServlet {
 		
 		String sTarget = mv.getViewName();
 		Map<String, Object> modelMap = mv.getModel();
-		for (Map.Entry<String, Object> e : modelMap.entrySet()) {
-			request.setAttribute(e.getKey(),e.getValue());
-		}
+		View view = resolveViewName(sTarget, modelMap, request);
+		view.render(modelMap, request, response);
 		
-		String sPath = "/" + sTarget + ".jsp";
-		request.getRequestDispatcher(sPath).forward(request, response);
-
 	}
 	
 	protected View resolveViewName(String viewName, Map<String, Object> model,

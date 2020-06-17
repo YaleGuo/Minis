@@ -1327,3 +1327,76 @@ URL通过映射机制找到实际的业务逻辑方法。
 			ModelAndView mav = new ModelAndView("test","msg",user.getName());
 			return mav;
 		}
+
+	
+
+9.
+	支持前端View，核心是render().
+	public interface View {
+		void render(Map<String, ?> model, HttpServletRequest request, HttpServletResponse response);
+	}
+	Controller返回值增加ModelAndView：
+	public class ModelAndView {
+		private Object view;
+		private Map<String, Object> model = new HashMap<>();
+	}
+
+	DispatcherServlet增加属性：
+		private ViewResolver viewResolver;
+		
+	DispatcherServlet初始化后刷新：	
+		protected void Refresh() {
+			initHandlerMappings(this.webApplicationContext);
+			initHandlerAdapters(this.webApplicationContext);
+			initViewResolvers(this.webApplicationContext);
+    	}
+
+	RequestMappingHandlerAdapter调用invokeHandlerMethod拿到返回值后进行如下处理：
+				if (returnObj instanceof ModelAndView) {
+					mav = (ModelAndView)returnObj;
+				}
+				else if(returnObj instanceof String) {
+					String sTarget = (String)returnObj;
+					mav = new ModelAndView();
+					mav.setViewName(sTarget);
+				}
+				
+	DispatcherServlet调用RequestMappingHandlerAdapter的invokeHandlerMethod后处理范式的ModelAndView，
+		mv = ha.handle(processedRequest, response, handlerMethod);
+		render(processedRequest, response, mv);
+	
+	render的实现，就是先按照规则找到具体的view(某个jsp页面)，拿到model数据，然后再render：
+	protected void render( HttpServletRequest request, HttpServletResponse response,ModelAndView mv) throws Exception {
+		String sTarget = mv.getViewName();
+		Map<String, Object> modelMap = mv.getModel();
+		View view = resolveViewName(sTarget, modelMap, request);
+		view.render(modelMap, request, response);
+	}
+	
+	提供一个默认的JstlView实现：
+	public void render(Map<String, ?> model, HttpServletRequest request, HttpServletResponse response)
+			throws Exception {
+		for (Entry<String, ?> e : model.entrySet()) {
+			request.setAttribute(e.getKey(),e.getValue());
+		}
+		
+		request.getRequestDispatcher(getUrl()).forward(request, response);
+	}
+	
+	这些也是通过配置注入的：
+	<bean id="viewResolver" class="com.minis.web.servlet.view.InternalResourceViewResolver" >
+	 <property type="String" name="viewClassName" value="com.minis.web.servlet.view.JstlView" />
+	 <property type="String" name="prefix" value="/jsp/" />
+	 <property type="String" name="suffix" value=".jsp" />
+    </bean>
+		
+    另外，我们把容器的listener, beanfactorypostprocessor还有beanpostprocessor都配置化了。
+    	<bean id="contextListener" class="com.test.MyListener" />
+
+    	<bean id="beanFactoryPostProcessor" class="com.test.MyBeanFactoryPostProcessor" />
+
+    	<bean id="autowiredAnnotationBeanPostProcessor" class="com.minis.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor" />
+    	<bean id="logBeanPostProcessor" class="com.test.LogBeanPostProcessor" />
+    名字不重要，是通过类型匹配进行注入的。
+
+    至此，有了完整的MVC实现。

@@ -1,4 +1,4 @@
-package com.minis.web;
+package com.minis.http.converter;
 
 import java.io.IOException;
 

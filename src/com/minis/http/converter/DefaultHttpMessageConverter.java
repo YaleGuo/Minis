@@ -1,9 +1,11 @@
-package com.minis.web;
+package com.minis.http.converter;
 
 import java.io.IOException;
 import java.io.PrintWriter;
 
 import javax.servlet.http.HttpServletResponse;
+
+import com.minis.util.ObjectMapper;
 
 public class DefaultHttpMessageConverter implements HttpMessageConverter {
 	String defaultContentType = "text/json;charset=UTF-8";

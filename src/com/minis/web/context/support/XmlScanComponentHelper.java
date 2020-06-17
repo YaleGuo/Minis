@@ -1,5 +1,6 @@
-package com.minis.web;
+package com.minis.web.context.support;
 
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,14 +25,12 @@ public class XmlScanComponentHelper {
 				e.printStackTrace();
 			}
 	        Element root = document.getRootElement();
-	        Iterator it = root.elementIterator();
-
-	        while (it.hasNext()) {
-	            Element element = (Element) it.next();
-	            	packages.add(element.attributeValue("base-package"));
-	        }
-	        
-	        return packages;
+			List elements = root.elements("component-scan");
+			for (Object element : elements) {
+				packages.add(((Element)element).attributeValue("base-package"));
+			}
+			
+			return packages;
 	    }
 
 }
