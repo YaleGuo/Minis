@@ -1,4 +1,4 @@
-package com.minis.web;
+package com.minis.util;
 
 public interface ObjectMapper {
 	void setDateFormat(String dateFormat);

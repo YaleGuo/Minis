@@ -1,8 +1,10 @@
-package com.minis.web;
+package com.minis.web.context;
 
 import javax.servlet.ServletContext;
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
+
+import com.minis.web.context.support.XmlWebApplicationContext;
 
 public class ContextLoaderListener implements ServletContextListener {
 	public static final String CONFIG_LOCATION_PARAM = "contextConfigLocation";

@@ -42,7 +42,7 @@ public class AutowiredAnnotationBeanPostProcessor implements BeanPostProcessor {
 	@Override
 	public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
 		// TODO Auto-generated method stub
-		return null;
+		return bean;
 	}
 
 	public BeanFactory getBeanFactory() {

@@ -1,4 +1,4 @@
-package com.minis.web.servlet;
+package com.minis.web.method.annotation;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;

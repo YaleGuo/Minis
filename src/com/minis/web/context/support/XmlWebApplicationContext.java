@@ -1,7 +1,8 @@
-package com.minis.web;
+package com.minis.web.context.support;
 
 import javax.servlet.ServletContext;
 import com.minis.context.ClassPathXmlApplicationContext;
+import com.minis.web.context.WebApplicationContext;
 
 public class XmlWebApplicationContext 
 					extends ClassPathXmlApplicationContext implements WebApplicationContext{
