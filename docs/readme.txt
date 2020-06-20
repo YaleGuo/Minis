@@ -1365,7 +1365,7 @@ URL通过映射机制找到实际的业务逻辑方法。
 		mv = ha.handle(processedRequest, response, handlerMethod);
 		render(processedRequest, response, mv);
 	
-	render的实现，就是先按照规则找到具体的view(某个jsp页面)，拿到model数据，然后再render：
+	render的实现，就是先按照规则找到具体的view(某个jdp页面)，拿到model数据，然后再render：	
 	protected void render( HttpServletRequest request, HttpServletResponse response,ModelAndView mv) throws Exception {
 		String sTarget = mv.getViewName();
 		Map<String, Object> modelMap = mv.getModel();
@@ -1400,3 +1400,194 @@ URL通过映射机制找到实际的业务逻辑方法。
     名字不重要，是通过类型匹配进行注入的。
 
     至此，有了完整的MVC实现。
+		
+
+
+-----------------------------------JDBC--------------------------------------
+1.
+	提供一个JdbcTemplate抽象类，实现基本JDBC的访问框架代码：
+	现在只实现数据查询。
+	public Object query(String sql) {
+		Connection con = null;
+		PreparedStatement stmt = null;
+		ResultSet rs = null;
+		Object rtnObj = null;
+		
+			Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+			con = DriverManager.getConnection("jdbc:sqlserver://localhost:1433;databasename=DEMO;user=sa;password=Sql2016;");
+
+			stmt = con.prepareStatement(sql);
+			rs = stmt.executeQuery();
+			
+			rtnObj = doInStatement(rs);
+		
+		return rtnObj;
+	}
+	
+	真正的业务代码留给用户自己实现doInStatement(),如实现User类：
+	public class UserJdbcImpl extends JdbcTemplate {
+	@Override
+	protected Object doInStatement(ResultSet rs) {
+		User rtnUser = null;
+			if (rs.next()) {
+				rtnUser = new User();
+				rtnUser.setId(rs.getInt("id"));
+				rtnUser.setName(rs.getString("name"));
+				rtnUser.setBirthday(new java.util.Date(rs.getDate("birthday").getTime()));
+			}
+		
+		return rtnUser;
+	}
+	
+	原有的UserService改成：
+	public class UserService {
+		public User getUserInfo(int userid) {
+			String sql = "select id, name,birthday from users where id="+userid;
+			JdbcTemplate jdbcTemplate = new UserJdbcImpl();
+			User rtnUser = (User)jdbcTemplate.query(sql);
+			
+			return rtnUser;
+		}
+	}
+
+	这一步仅仅只做到了把JDBC查询语句中的格式化的语句抽离出来，让应用程序员只需要管sql语句并返回数据对象。
+	
+
+
+
+2.
+	为了不让每个实体类都对应一个UserJdbcImpl类，写成callback模式，让用户自己动态写入：
+	public Object query(StatementCallback stmtcallback) {
+		Connection con = null;
+		Statement stmt = null;
+		
+			Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+			con = DriverManager.getConnection("jdbc:sqlserver://localhost:1433;databasename=DEMO;user=sa;password=Sql2016;");
+
+			stmt = con.createStatement();
+			
+			return stmtcallback.doInStatement(stmt);
+	}
+	
+	同时支持PreparedStatement：
+	public Object query(String sql, Object[] args, PreparedStatementCallback pstmtcallback) {
+		Connection con = null;
+		PreparedStatement pstmt = null;
+		
+			Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+			con = DriverManager.getConnection("jdbc:sqlserver://localhost:1433;databasename=DEMO;user=sa;password=Sql2016;");
+
+			pstmt = con.prepareStatement(sql);
+			if (args != null) {
+				for (int i = 0; i < args.length; i++) {
+					Object arg = args[i];
+					if (arg instanceof String) {
+						pstmt.setString(i+1, (String)arg);
+					}
+					else if (arg instanceof Integer) {
+						pstmt.setInt(i+1, (int)arg);
+					}
+					else if (arg instanceof java.util.Date) {
+						pstmt.setDate(i+1, new java.sql.Date(((java.util.Date)arg).getTime()));
+						
+					}
+				}
+			}
+			
+			return pstmtcallback.doInPreparedStatement(pstmt);
+	}
+
+	两个Callback接口如下：
+	public interface StatementCallback {
+		Object doInStatement(Statement stmt) throws SQLException;
+	}
+	public interface PreparedStatementCallback {
+		Object doInPreparedStatement(PreparedStatement stmt) throws SQLException;
+	}
+	
+	这样应用程序员就只需要用一个JdbcTemplate类就可以了，不用为每一个业务类单独再做一个.
+
+	用户类改成使用Callback动态匿名类：
+	public User getUserInfo(int userid) {
+		final String sql = "select id, name,birthday from users where id=?";
+		return (User)jdbcTemplate.query(sql, new Object[]{new Integer(userid)},
+				(pstmt)->{			
+					ResultSet rs = pstmt.executeQuery();
+					User rtnUser = null;
+					if (rs.next()) {
+						rtnUser = new User();
+						rtnUser.setId(userid);
+						rtnUser.setName(rs.getString("name"));
+						rtnUser.setBirthday(new java.util.Date(rs.getDate("birthday").getTime()));
+					} else {
+					}
+					return rtnUser;
+				}
+		);
+	}
+	
+	由于只需要一个JdbcTemplate，我们就可以事先在IoC容器中声明这个bean，然后自动注入进来。
+	<bean id="userService" class="com.test.service.UserService" /> 
+	<bean id="jdbcTemplate" class="com.minis.jdbc.core.JdbcTemplate" /> 
+		
+	public class UserService {
+		@Autowired
+		JdbcTemplate jdbcTemplate;
+	}
+	这里采用的是按照名字匹配注入。
+	
+	controller再注入service：
+	public class HelloWorldBean {
+		@Autowired
+		UserService userService;
+		
+		@RequestMapping("/test8")
+		@ResponseBody
+		public User doTest8(HttpServletRequest request, HttpServletResponse response) {
+			int userid = Integer.parseInt(request.getParameter("id"));
+			User user = userService.getUserInfo(userid);		
+			return user;
+		}	
+	}
+		
+	
+3.
+	我们看到，JdbcTemplate中获取数据库连接信息仍然是hard coded：
+			Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+			con = DriverManager.getConnection("jdbc:sqlserver://localhost:1433;databasename=DEMO;user=sa;password=Sql2016;");
+	我们把这一部分代码包装成DataSource：
+			con = dataSource.getConnection();
+
+	并通过属性注入：
+	public class JdbcTemplate {
+		private DataSource dataSource;
+	}
+	
+	配置文件：
+	<bean id="dataSource" class="com.minis.jdbc.datasource.SingleConnectionDataSource">
+	<property type="String" name="driverClassName" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
+	<property type="String" name="url" value="jdbc:sqlserver://localhost:1433;databasename=DEMO;"/>
+	<property type="String" name="username" value="sa"/>
+	<property type="String" name="password" value="Sql2016"/>
+    </bean>
+                
+	<bean id="jdbcTemplate" class="com.minis.jdbc.core.JdbcTemplate" >
+	<property type="javax.sql.DataSource" name="dataSource" ref="dataSource"/>
+	</bean> 
+
+	DataSource定义如下：
+	public class SingleConnectionDataSource implements DataSource {
+		private String driverClassName;
+		private String url;
+		private String username;
+		private String password;
+		private Properties connectionProperties;	
+		private Connection connection;
+		
+		@Override
+		public Connection getConnection() throws SQLException {
+			return getConnectionFromDriver(getUsername(), getPassword());
+		}
+	}
+	
+	这样在bean初始化的时候，就生成了一个数据库连接，然后注入JdbcTemplate来使用。
