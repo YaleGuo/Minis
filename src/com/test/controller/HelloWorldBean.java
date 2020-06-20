@@ -12,10 +12,15 @@ import com.minis.web.bind.annotation.ResponseBody;
 import com.minis.web.servlet.ModelAndView;
 import com.test.entity.User;
 import com.test.service.BaseService;
+import com.test.service.UserService;
 
 public class HelloWorldBean {
 	@Autowired
 	BaseService baseservice;
+	
+	@Autowired
+	UserService userService;
+	
 	
 	@RequestMapping("/test2")
 	public void doTest2(HttpServletRequest request, HttpServletResponse response) {
@@ -42,6 +47,14 @@ public class HelloWorldBean {
 	public User doTest7(User user) {
 		user.setName(user.getName() + "---");
 		user.setBirthday(new Date());
+		return user;
+	}	
+	
+	@RequestMapping("/test8")
+	@ResponseBody
+	public User doTest8(HttpServletRequest request, HttpServletResponse response) {
+		int userid = Integer.parseInt(request.getParameter("id"));
+		User user = userService.getUserInfo(userid);		
 		return user;
 	}	
 }

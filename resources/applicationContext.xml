@@ -11,6 +11,20 @@
         <property type="com.test.service.BaseService" name="ref1" ref="baseservice"/>
 	</bean>
 	<bean id="baseservice" class="com.test.service.BaseService" /> 
+	<bean id="userService" class="com.test.service.UserService" /> 
+	
+	<bean id="dataSource" class="com.minis.jdbc.datasource.SingleConnectionDataSource">
+	<property type="String" name="driverClassName" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
+	<property type="String" name="url" value="jdbc:sqlserver://localhost:1433;databasename=DEMO;"/>
+	<property type="String" name="username" value="sa"/>
+	<property type="String" name="password" value="Sql2016"/>
+    </bean>
+       
+         
+	<bean id="jdbcTemplate" class="com.minis.jdbc.core.JdbcTemplate" >
+	<property type="javax.sql.DataSource" name="dataSource" ref="dataSource"/>
+	</bean> 
+	
 	
 	<bean id="contextListener" class="com.test.MyListener" /> 
 	
