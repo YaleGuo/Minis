@@ -2,6 +2,7 @@ package com.test.controller;
 
 import java.io.IOException;
 import java.util.Date;
+import java.util.List;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -56,5 +57,13 @@ public class HelloWorldBean {
 		int userid = Integer.parseInt(request.getParameter("id"));
 		User user = userService.getUserInfo(userid);		
 		return user;
+	}	
+	
+	@RequestMapping("/test9")
+	@ResponseBody
+	public List<User> doTest9(HttpServletRequest request, HttpServletResponse response) {
+		int userid = Integer.parseInt(request.getParameter("id"));
+		List<User> users = userService.getUsers(userid);		
+		return users;
 	}	
 }

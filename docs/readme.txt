@@ -1590,4 +1590,203 @@ URL通过映射机制找到实际的业务逻辑方法。
 		}
 	}
 	
-	这样在bean初始化的时候，就生成了一个数据库连接，然后注入JdbcTemplate来使用。
+	这样在bean初始化的时候，设置Property的时候load相应的JDBC Driver，然后注入JdbcTemplate来使用。
+	在应用程序dataSource.getConnection()的时候才实际生成数据库连接。
+
+
+4.
+	现在往PreparedStatement中传参数是这么实现的：
+				for (int i = 0; i < args.length; i++) {
+					Object arg = args[i];
+					if (arg instanceof String) {
+						pstmt.setString(i+1, (String)arg);
+					}
+					else if (arg instanceof Integer) {
+						pstmt.setInt(i+1, (int)arg);
+					}
+					else if (arg instanceof java.util.Date) {
+						pstmt.setDate(i+1, new java.sql.Date(((java.util.Date)arg).getTime()));
+					}
+				}
+	我们现在修改一下，把jdbc中传参数的代码进行包装：ArgumentPreparedStatementSetter
+	通过setValues()把参数传进PreparedStatement.
+		public class ArgumentPreparedStatementSetter {
+			private final Object[] args;
+		
+			public ArgumentPreparedStatementSetter(Object[] args) {
+				this.args = args;
+			}
+		
+			public void setValues(PreparedStatement pstmt) throws SQLException {
+				for (int i = 0; i < this.args.length; i++) {
+					Object arg = this.args[i];
+					doSetValue(pstmt, i + 1, arg);
+				}
+			}
+		
+			protected void doSetValue(PreparedStatement pstmt, int parameterPosition, Object argValue) throws SQLException {
+				Object arg = argValue;
+				if (arg instanceof String) {
+					pstmt.setString(parameterPosition, (String)arg);
+				}
+				else if (arg instanceof Integer) {
+					pstmt.setInt(parameterPosition, (int)arg);
+				}
+				else if (arg instanceof java.util.Date) {
+					pstmt.setDate(parameterPosition, new java.sql.Date(((java.util.Date)arg).getTime()));	
+				}
+			}
+		}
+	
+	所以，Query()就修改成这个样子：
+		public Object query(String sql, Object[] args, PreparedStatementCallback pstmtcallback) {
+			Connection con = null;
+			PreparedStatement pstmt = null;
+			
+			con = dataSource.getConnection();
+			pstmt = con.prepareStatement(sql);
+			ArgumentPreparedStatementSetter argumentSetter = new ArgumentPreparedStatementSetter(args);	
+			argumentSetter.setValues(pstmt);
+			
+			return pstmtcallback.doInPreparedStatement(pstmt);
+		}
+
+	接下来，我们再把接受返回值的代码进行包装：RowMapperResultSetExtractor。
+	先提供一个接口RowMapper，把JDBC resultset的某一行数据映射成为一个对象：
+	public interface RowMapper<T> {
+		T mapRow(ResultSet rs, int rowNum) throws SQLException;
+	}
+	再提供一个接口ResultSetExtractor，把JDBC ResultSet数据映射为一个集合对象：
+	public interface ResultSetExtractor<T> {
+		T extractData(ResultSet rs) throws SQLException;
+	}
+	利用上面的两个接口，我们事先RowMapperResultSetExtractor：
+	public class RowMapperResultSetExtractor<T> implements ResultSetExtractor<List<T>> {
+		private final RowMapper<T> rowMapper;
+	
+		public RowMapperResultSetExtractor(RowMapper<T> rowMapper) {
+			this.rowMapper = rowMapper;
+		}
+	
+		public List<T> extractData(ResultSet rs) throws SQLException {
+			List<T> results = new ArrayList<>();
+			int rowNum = 0;
+			while (rs.next()) {
+				results.add(this.rowMapper.mapRow(rs, rowNum++));
+			}
+			return results;
+		}
+	}
+
+	有了传入和返回数据的包装，query()修改如下：
+	public <T> List<T> query(String sql, Object[] args, RowMapper<T> rowMapper) {
+		RowMapperResultSetExtractor<T> resultExtractor = new RowMapperResultSetExtractor<>(rowMapper);
+		Connection con = null;
+		PreparedStatement pstmt = null;
+		ResultSet rs = null;
+
+		con = dataSource.getConnection();
+
+		pstmt = con.prepareStatement(sql);
+		ArgumentPreparedStatementSetter argumentSetter = new ArgumentPreparedStatementSetter(args);	
+		argumentSetter.setValues(pstmt);
+		rs = pstmt.executeQuery();
+		
+		return resultExtractor.extractData(rs);
+	}
+	
+	那么应用程序的service层改成这样：
+	public List<User> getUsers(int userid) {
+		final String sql = "select id, name,birthday from users where id>?";
+		return (List<User>)jdbcTemplate.query(sql, new Object[]{new Integer(userid)},
+						new RowMapper<User>(){
+							public User mapRow(ResultSet rs, int i) throws SQLException {
+								User rtnUser = new User();
+								rtnUser.setId(rs.getInt("id"));
+								rtnUser.setName(rs.getString("name"));
+								rtnUser.setBirthday(new java.util.Date(rs.getDate("birthday").getTime()));
+		
+								return rtnUser;
+							}
+						}
+		);
+	}
+		
+	到此为止，JdbcTemplate就提供三种query()了：
+	public Object query(StatementCallback stmtcallback) {}
+	public Object query(String sql, Object[] args, PreparedStatementCallback pstmtcallback) {}
+	public <T> List<T> query(String sql, Object[] args, RowMapper<T> rowMapper){}
+		
+
+		
+
+5.
+	支持PooledConnection，用Active表示是否忙着，实际上永不close：
+	public PooledConnection(Connection connection, boolean active) {
+		this.connection = connection;
+		this.active = active;
+
+		public void setActive(boolean active) {
+			this.active = active;
+		}
+		public void close() throws SQLException {
+			this.active = false;
+		}
+		
+	把DataSource改成PooledDataSource，初始化的时候激活所有的数据库链接：
+	public class PooledDataSource implements DataSource{
+		private List<PooledConnection> connections = null;
+		private String driverClassName;
+		private String url;
+		private String username;
+		private String password;
+		private int initialSize = 2;
+		private Properties connectionProperties;	
+		
+		private void initPool() {
+			this.connections = new ArrayList<>(initialSize);
+			for(int i = 0; i < initialSize; i++){
+				Connection connect = DriverManager.getConnection(url, username, password);
+				PooledConnection pooledConnection = new PooledConnection(connect, false);
+				this.connections.add(pooledConnection);
+			}
+		}
+		
+		获取数据库连接的代码如下：
+		PooledConnection pooledConnection= getAvailableConnection();
+		while(pooledConnection == null){
+			pooledConnection = getAvailableConnection();
+			if(pooledConnection == null){
+				try {
+					TimeUnit.MILLISECONDS.sleep(30);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
+		}		
+		return pooledConnection;
+	可以看出，策略是死等这一个有效的连接。
+
+	获取有效的连接的代码：
+		private PooledConnection getAvailableConnection() throws SQLException{
+			for(PooledConnection pooledConnection : this.connections){
+				if (!pooledConnection.isActive()){
+					pooledConnection.setActive(true);
+					return pooledConnection;
+				}
+			}
+	
+			return null;
+		}
+	可以看出，其实是拿一个空闲标志的数据库连接。	
+	
+	通过配置注入这个datasource：
+	<bean id="dataSource" class="com.minis.jdbc.pool.PooledDataSource">  
+                <property name="url" value="jdbc:sqlserver://localhost:1433;databasename=DEMO"/>  
+                <property name="driverClassName" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>  
+                <property name="username" value="sa"/>  
+                <property name="password" value="Sql2016"/>  
+                <property type="int" name="initialSize" value="3"/>  
+    </bean>
+		
+	别的程序没有任何变化。

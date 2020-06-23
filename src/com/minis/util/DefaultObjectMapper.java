@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
+import java.util.List;
 
 public class DefaultObjectMapper implements ObjectMapper{
 	String dateFormat = "yyyy-MM-dd";
@@ -32,6 +33,10 @@ public class DefaultObjectMapper implements ObjectMapper{
 
 	@Override
 	public String writeValuesAsString(Object obj) {
+		if (obj instanceof List<?>) {
+			return writeListAsString((List<?>)obj);
+		}
+		
 		String sJsonStr = "{";
 		
 		Class<?> clz = obj.getClass();
@@ -77,6 +82,25 @@ public class DefaultObjectMapper implements ObjectMapper{
 		sJsonStr += "}";
 		
 		return sJsonStr;
+	}
+
+
+	public String writeListAsString(List<?> list) {
+		String sJsonStr = "[";
+
+		for (Object obj : list) {
+			String sObj = writeValuesAsString(obj);
+			if (sJsonStr.equals("[")) {
+				sJsonStr += sObj;
+			}
+			else {
+				sJsonStr += "," + sObj;	
+			}
+		}
+		
+		sJsonStr += "]";
+		return sJsonStr;
+
 	}
 
 }
