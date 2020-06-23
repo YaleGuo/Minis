@@ -12,7 +12,9 @@ import com.minis.web.bind.annotation.RequestMapping;
 import com.minis.web.bind.annotation.ResponseBody;
 import com.minis.web.servlet.ModelAndView;
 import com.test.entity.User;
+import com.test.service.AService;
 import com.test.service.BaseService;
+import com.test.service.IAction;
 import com.test.service.UserService;
 
 public class HelloWorldBean {
@@ -65,5 +67,27 @@ public class HelloWorldBean {
 		int userid = Integer.parseInt(request.getParameter("id"));
 		List<User> users = userService.getUsers(userid);		
 		return users;
-	}	
+	}
+	
+	@Autowired
+	IAction action;
+	
+	@RequestMapping("/testaop")
+	public void doTestAop(HttpServletRequest request, HttpServletResponse response) {
+		
+		//DynamicProxy proxy = new DynamicProxy(action);
+		//IAction p = (IAction)proxy.getProxy();
+	System.out.println("action -------------- " + action + "----------------");
+
+		action.doAction();
+		
+		String str = "test aop, hello world!";
+		try {
+			response.getWriter().write(str);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+
 }

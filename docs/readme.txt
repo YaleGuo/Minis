@@ -1790,3 +1790,147 @@ URL通过映射机制找到实际的业务逻辑方法。
     </bean>
 		
 	别的程序没有任何变化。
+	
+	
+		
+-----------------------------------AOP--------------------------------------
+1. 
+	第一步先直接用Java 动态代理编程实现Aop：
+	代理interface上的doAction()方法。
+	public class DynamicProxy {
+		private Object subject = null; 
+		
+		public DynamicProxy(Object subject) {
+				this.subject = subject;
+		}
+		
+		public Object getProxy() {
+			return Proxy.newProxyInstance(DynamicProxy.class
+					.getClassLoader(), subject.getClass().getInterfaces(),
+					new InvocationHandler() {
+				public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+					if (method.getName().equals("doAction")) {
+						 System.out.println("before call real object........");
+						 return method.invoke(subject, args); 
+					}
+					return null;
+				}
+			});
+		}
+	}
+	
+	Java的机制是在interface上代理，所以我们定义一个接口：
+	public interface IAction {
+		void doAction();
+	}
+
+	应用程序利用代理进行包装，实际的工作类注入。
+	<bean id="action" class="com.test.service.Action1" /> 
+	
+	应用程序：
+	@Autowired
+	IAction action;
+	
+	@RequestMapping("/testaop")
+	public void doTestAop(HttpServletRequest request, HttpServletResponse response) {
+		DynamicProxy proxy = new DynamicProxy(action);
+		IAction p = (IAction)proxy.getProxy();
+		p.doAction();
+	}
+
+		
+2. 	
+	直接写Proxy，对应用程序有介入，不是好方案，要考虑非介入式的。
+	
+	我们通过配置一个ProxyFactoryBean实现aop
+	<bean id="action" class="com.minis.aop.ProxyFactoryBean" >
+        <property type="java.lang.Object" name="target" ref="realaction"/>	
+	</bean>
+	factorybean的特点是它里面包含有一个target，指向真正工作的对象，在容器里面放入的是这个 FactoryBean,
+	而不是实际上工作的那个bean。当getBean()的时候，对于factorybean进行特殊处理，返回指向的这个真正工作的对象。
+	FactoryBean接口定义如下：
+	public interface FactoryBean<T> {
+		T getObject() throws Exception;
+		Class<?> getObjectType();
+	}
+	
+	改写AbstractBeanFactory：	AbstractBeanFactory extends FactoryBeanRegistrySupport 
+	在AbstractBeanFactory的getBean()的时候特殊处理FactoryBean，不是返回这个FactoryBean本身，而是返回它里面生成的object：
+	    if (singleton instanceof FactoryBean) {
+        	return this.getObjectForBeanInstance(singleton, beanName);
+        }
+        
+	getObjectForBeanInstance()进一步调用到  FactoryBeanRegistrySupport里面的    getObjectFromFactoryBean
+    private Object doGetObjectFromFactoryBean(final FactoryBean<?> factory, final String beanName) {
+		return factory.getObject();
+	}
+	通过这个手段，拿到factorybean指向的那个object。
+	
+	实际上这个object也并不是真正工作的那个object，如果那样就不能插入额外的逻辑了，所以其实是这个object的一个代理。
+	ProxyFactoryBean在getObject()中生成了一个代理getProxy(createAopProxy())，所以实际上BeanFactory
+	对于这个ProxyFactoryBean,它拿到的是一个动态代理类代理了target。
+	public Object getObject() throws Exception {
+		return getSingletonInstance();
+	}
+	private synchronized Object getSingletonInstance() {
+		if (this.singletonInstance == null) {
+			this.singletonInstance = getProxy(createAopProxy());
+		}
+		return this.singletonInstance;
+	}
+	protected Object getProxy(AopProxy aopProxy) {
+		return aopProxy.getProxy();
+	}
+	protected AopProxy createAopProxy() {
+		return getAopProxyFactory().createAopProxy(target);
+	}
+	
+	程序中默认了一个代理工厂，直接创建JdkDynamicAopProxy（预留了CglibAopProxy的支持）：
+	public class DefaultAopProxyFactory implements AopProxyFactory {
+		public AopProxy createAopProxy(Object target) {
+			//if (targetClass.isInterface() || Proxy.isProxyClass(targetClass)) {
+				return new JdkDynamicAopProxy(target);
+			//}
+			//return new CglibAopProxy(config);
+		}
+	}
+	
+	JdkDynamicAopProxy利用Java的动态代理技术代理了target：
+	public class JdkDynamicAopProxy implements AopProxy, InvocationHandler {
+		Object target;
+		
+		public JdkDynamicAopProxy(Object target) {
+			this.target = target;
+		}
+	
+		@Override
+		public Object getProxy() {
+			Object obj = Proxy.newProxyInstance(JdkDynamicAopProxy.class.getClassLoader(), target.getClass().getInterfaces(), this);
+			return obj;
+		}
+	
+		@Override
+		public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+			if (method.getName().equals("doAction")) {
+				 System.out.println("-----before call real object, dynamic proxy........");
+				 return method.invoke(target, args); 
+			}
+			return null;
+		}
+	}
+	
+	应用程序，就不需要写死Proxy代码了：
+	@Autowired
+	IAction action;
+	
+	@RequestMapping("/testaop")
+	public void doTestAop(HttpServletRequest request, HttpServletResponse response) {
+		action.doAction();
+	}
+	
+	配置文件：
+	<bean id="realaction" class="com.test.service.Action1" /> 
+	<bean id="action" class="com.minis.aop.ProxyFactoryBean" >
+        <property type="java.lang.Object" name="target" ref="realaction"/>	
+	</bean> 
+ 

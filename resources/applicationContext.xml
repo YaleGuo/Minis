@@ -11,7 +11,14 @@
         <property type="com.test.service.BaseService" name="ref1" ref="baseservice"/>
 	</bean>
 	<bean id="baseservice" class="com.test.service.BaseService" /> 
-	<bean id="userService" class="com.test.service.UserService" /> 
+	<bean id="userService" class="com.test.service.UserService" />
+	 
+	<bean id="realaction" class="com.test.service.Action1" /> 
+	
+	<bean id="action" class="com.minis.aop.ProxyFactoryBean" >
+        <property type="java.lang.Object" name="target" ref="realaction"/>	
+	</bean> 
+	
 	
 <!-- 	<bean id="dataSource" class="com.minis.jdbc.datasource.SingleConnectionDataSource">
 	<property type="String" name="driverClassName" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
