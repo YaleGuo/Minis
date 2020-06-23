@@ -13,11 +13,19 @@
 	<bean id="baseservice" class="com.test.service.BaseService" /> 
 	<bean id="userService" class="com.test.service.UserService" /> 
 	
-	<bean id="dataSource" class="com.minis.jdbc.datasource.SingleConnectionDataSource">
+<!-- 	<bean id="dataSource" class="com.minis.jdbc.datasource.SingleConnectionDataSource">
 	<property type="String" name="driverClassName" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
 	<property type="String" name="url" value="jdbc:sqlserver://localhost:1433;databasename=DEMO;"/>
 	<property type="String" name="username" value="sa"/>
 	<property type="String" name="password" value="Sql2016"/>
+    </bean> -->
+    
+    <bean id="dataSource" class="com.minis.jdbc.pool.PooledDataSource">  
+                <property name="url" value="jdbc:sqlserver://localhost:1433;databasename=DEMO"/>  
+                <property name="driverClassName" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>  
+                <property name="username" value="sa"/>  
+                <property name="password" value="Sql2016"/>  
+                <property type="int" name="initialSize" value="3"/>  
     </bean>
        
          

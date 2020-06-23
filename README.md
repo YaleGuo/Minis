@@ -9,3 +9,4 @@ use handleadapter to invocate method and process response,
 and use view resolver to render return message (JSP). 
 
 Use jdbctemplate to access database, and connectionpool supported.
+PooledConnection suppoerted.
