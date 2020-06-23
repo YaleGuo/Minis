@@ -10,3 +10,5 @@ and use view resolver to render return message (JSP).
 
 Use jdbctemplate to access database, and connectionpool supported.
 PooledConnection supported.
+
+FactoryBean supported. Use JDKDynamicsProxy technology.
