@@ -12,3 +12,5 @@ Use jdbctemplate to access database, and connectionpool supported.
 PooledConnection supported.
 
 FactoryBean supported. Use JDKDynamicsProxy technology.
+
+methodinterceptor，methodbeforeadvice, afterreturningadvice supported.
