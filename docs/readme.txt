@@ -1933,4 +1933,188 @@ URL通过映射机制找到实际的业务逻辑方法。
 	<bean id="action" class="com.minis.aop.ProxyFactoryBean" >
         <property type="java.lang.Object" name="target" ref="realaction"/>	
 	</bean> 
- 
+ 	
+    
+	
+3. 
+	增加了interceptor支持，接口如下：
+	public interface MethodInterceptor extends Interceptor{
+		Object invoke(MethodInvocation invocation) throws Throwable;
+	}
+	public interface Interceptor extends Advice {}
+	public interface Advice {}
+	接口来自于一个tag：Advice.
+	
+	再提供一个Advisor接口：
+	public interface Advisor {
+		MethodInterceptor getMethodInterceptor();
+		void setMethodInterceptor(MethodInterceptor methodInterceptor);
+	}
+	
+	ProxyFactoryBean中增加advisor属性:
+	private Advisor advisor;
+	
+	这个接口调用一个MethodInvocation，定义如下：
+	public interface MethodInvocation {
+		Method getMethod();
+		Object[] getArguments();
+		Object getThis();
+		Object proceed() throws Throwable;
+	}
+
+	应用程序员再invoke()中实现自己的业务拦截代码，中间的proceed()才十真正的目标对象的方法调用：
+	public class TracingInterceptor implements MethodInterceptor {
+		public Object invoke(MethodInvocation i) throws Throwable {
+			System.out.println("method "+i.getMethod()+" is called on "+
+	                        i.getThis()+" with args "+i.getArguments());
+			Object ret=i.proceed();
+			System.out.println("method "+i.getMethod()+" returns "+ret);
+			return ret;
+	   }
+	}
+	public Object proceed() throws Throwable {
+		return this.method.invoke(this.target, this.arguments);
+	}
+
+	应用程序员可以给业务逻辑加上自己的拦截，配置如下：
+	<bean id="myInterceptor" class="com.test.service.TracingInterceptor" />
+	 
+	<bean id="realaction" class="com.test.service.Action1" /> 
+	<bean id="action" class="com.minis.aop.ProxyFactoryBean" >
+        <property type="java.lang.Object" name="target" ref="realaction"/>	
+        <property type="String" name="interceptorName" value="myInterceptor"/>	
+	</bean> 
+	
+	为了实现目标对象调用前的拦截，我们在ProxyFactoryBean的getObject()中initializeAdvisor():
+	public Object getObject() throws Exception {
+		initializeAdvisor();
+		return getSingletonInstance();
+	}
+	private synchronized void initializeAdvisor() {
+		Object advice = null;
+		MethodInterceptor mi = null;
+
+		advice = (MethodInterceptor)this.beanFactory.getBean(this.interceptorName);
+	
+		advisor = new DefaultAdvisor();
+		advisor.setMethodInterceptor((MethodInterceptor)advice);
+	}
+	把应用程序自定义的拦截器获取到advisor中。
+	
+	修改接口，增加advisor参数：
+	public interface AopProxyFactory {
+		AopProxy createAopProxy(Object target,Advisor advisor);
+	}
+
+	默认实现也增加这个参数：	
+	public class DefaultAopProxyFactory implements AopProxyFactory {
+		public AopProxy createAopProxy(Object target, Advisor advisor) {
+			return new JdkDynamicAopProxy(target, advisor);
+		}
+	}
+	
+	实际调用某个方法的时候，不是直接调用method，而是先拿到advisor里面的interceptor,
+	再把正常的method调用包装成ReflectiveMethodInvocation，然后调用interceptor.invoke(invocation)：
+	public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+		if (method.getName().equals("doAction")) {
+			Class<?> targetClass = (target != null ? target.getClass() : null);
+			MethodInterceptor interceptor = this.advisor.getMethodInterceptor();
+			MethodInvocation invocation =
+						new ReflectiveMethodInvocation(proxy, target, method, args, targetClass);
+
+			return interceptor.invoke(invocation);
+		}
+		return null;
+	}
+	
+	
+
+	
+4. 
+	advice增加到三种，除了methodinterceptor之外，再支持methodbeforeadvice, afterreturningadvice
+	public interface MethodBeforeAdvice extends BeforeAdvice{
+		void before(Method method, Object[] args, Object target) throws Throwable;
+	}
+	public interface AfterReturningAdvice extends AfterAdvice {
+		void afterReturning(Object returnValue, Method method, Object[] args, Object target) throws Throwable;
+	}
+
+	我们在ProxyFactoryBean的getObject()中initializeAdvisor()修改为支持三种类型的advice:
+	private synchronized void initializeAdvisor() {
+		Object advice = null;
+		MethodInterceptor mi = null;
+
+		advice = this.beanFactory.getBean(this.interceptorName);
+
+		if (advice instanceof BeforeAdvice) {
+			mi = new MethodBeforeAdviceInterceptor((MethodBeforeAdvice)advice);
+		}
+		else if (advice instanceof AfterAdvice){
+			mi = new AfterReturningAdviceInterceptor((AfterReturningAdvice)advice);
+		}
+		else if (advice instanceof MethodInterceptor) {
+			mi = (MethodInterceptor)advice;
+		}
+		
+		advisor = new DefaultAdvisor();
+		advisor.setMethodInterceptor(mi);
+	}
+	统一用Interceptor进行了包装。
+	
+	AfterReturningAdviceInterceptor包装：
+	public class AfterReturningAdviceInterceptor implements MethodInterceptor, AfterAdvice {
+		private final AfterReturningAdvice advice;
+		public AfterReturningAdviceInterceptor(AfterReturningAdvice advice) {
+			this.advice = advice;
+		}
+		public Object invoke(MethodInvocation mi) throws Throwable {
+			Object retVal = mi.proceed();
+			this.advice.afterReturning(retVal, mi.getMethod(), mi.getArguments(), mi.getThis());
+			return retVal;
+		}
+	}
+	可以看出是调用了目标对象返回后再调用了afterReturning（应用程序员自定义），这个时候可以用返回值retVal。
+	
+	MethodBeforeAdviceInterceptor包装：
+	public class MethodBeforeAdviceInterceptor implements MethodInterceptor {
+		private final MethodBeforeAdvice advice;	
+		public MethodBeforeAdviceInterceptor(MethodBeforeAdvice advice) {
+			this.advice = advice;
+		}
+		public Object invoke(MethodInvocation mi) throws Throwable {
+			this.advice.before(mi.getMethod(), mi.getArguments(), mi.getThis());
+			return mi.proceed();
+		}
+	}
+	可以看出是调用目标对象之前调用了before（应用程序员自定义），所以是拿不到retVal的。
+	
+	应用程序的自定义工作：
+	public class MyAfterAdvice implements AfterReturningAdvice{
+		public void afterReturning(Object returnValue, Method method, Object[] args, Object target) throws Throwable {
+			System.out.println("----------my interceptor after method call----------");
+		}
+	}
+	public class MyBeforeAdvice implements MethodBeforeAdvice{
+		public void before(Method method, Object[] args, Object target) throws Throwable {
+			System.out.println("----------my interceptor befor method call----------");
+		}
+	}
+	public class MyInterceptor implements MethodInterceptor{
+		public Object invoke(MethodInvocation invocation) throws Throwable {
+			System.out.println("method "+invocation.getMethod()+" is called on "+
+					invocation.getThis()+" with args "+invocation.getArguments());
+			Object ret=invocation.proceed();
+			System.out.println("method "+invocation.getMethod()+" returns "+ret);
+			
+			return ret;
+		}
+	}
+	
+	配置文件不变，可以用上面的三类advice：
+	<bean id="myInterceptor" class="com.test.service.MyInterceptor" />
+	<bean id="realaction" class="com.test.service.Action1" /> 
+	<bean id="action" class="com.minis.aop.ProxyFactoryBean" >
+        <property type="java.lang.Object" name="target" ref="realaction"/>	
+        <property type="String" name="interceptorName" value="myInterceptor"/>	
+	</bean> 
+	

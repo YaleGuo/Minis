@@ -74,11 +74,6 @@ public class HelloWorldBean {
 	
 	@RequestMapping("/testaop")
 	public void doTestAop(HttpServletRequest request, HttpServletResponse response) {
-		
-		//DynamicProxy proxy = new DynamicProxy(action);
-		//IAction p = (IAction)proxy.getProxy();
-	System.out.println("action -------------- " + action + "----------------");
-
 		action.doAction();
 		
 		String str = "test aop, hello world!";
