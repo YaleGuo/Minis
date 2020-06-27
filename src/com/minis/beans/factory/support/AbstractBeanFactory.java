@@ -55,8 +55,8 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 					
 					//beanpostprocessor
 					//step 1 : postProcessBeforeInitialization
-					applyBeanPostProcessorsBeforeInitialization(singleton, beanName);				
-	
+					singleton = applyBeanPostProcessorsBeforeInitialization(singleton, beanName);				
+System.out.println(" class proxy after bean post processor " + singleton.getClass());	
 					//step 2 : init-method
 					if (bd.getInitMethodName() != null && !bd.getInitMethodName().equals("")) {
 						invokeInitMethod(bd, singleton);
@@ -65,7 +65,8 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 					//step 3 : postProcessAfterInitialization
 					applyBeanPostProcessorsAfterInitialization(singleton, beanName);
 
-
+					this.removeSingleton(beanName);
+					this.registerBean(beanName, singleton);
         		}
         		else {
         			return null;

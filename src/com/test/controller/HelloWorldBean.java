@@ -74,6 +74,7 @@ public class HelloWorldBean {
 	
 	@RequestMapping("/testaop")
 	public void doTestAop(HttpServletRequest request, HttpServletResponse response) {
+System.out.println("testaop, call " + action.getClass());		
 		action.doAction();
 		
 		String str = "test aop, hello world!";
@@ -84,5 +85,45 @@ public class HelloWorldBean {
 			e.printStackTrace();
 		}
 	}
+	@RequestMapping("/testaop2")
+	public void doTestAop2(HttpServletRequest request, HttpServletResponse response) {
+		action.doSomething();
+		
+		String str = "test aop 2, hello world!";
+		try {
+			response.getWriter().write(str);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}	
 
+	@Autowired
+	IAction action2;
+	
+	@RequestMapping("/testaop3")
+	public void doTestAop3(HttpServletRequest request, HttpServletResponse response) {
+		action2.doAction();
+		
+		String str = "test aop 3, hello world!";
+		try {
+			response.getWriter().write(str);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+
+	@RequestMapping("/testaop4")
+	public void doTestAop4(HttpServletRequest request, HttpServletResponse response) {
+		action2.doSomething();
+		
+		String str = "test aop 4, hello world!";
+		try {
+			response.getWriter().write(str);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
 }

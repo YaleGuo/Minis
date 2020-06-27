@@ -4,9 +4,10 @@ import java.lang.reflect.Field;
 
 import com.minis.beans.BeansException;
 import com.minis.beans.factory.BeanFactory;
+import com.minis.beans.factory.BeanFactoryAware;
 import com.minis.beans.factory.config.BeanPostProcessor;
 
-public class AutowiredAnnotationBeanPostProcessor implements BeanPostProcessor {
+public class AutowiredAnnotationBeanPostProcessor implements BeanPostProcessor,BeanFactoryAware {
 	private BeanFactory beanFactory;
 	
 	@Override
@@ -25,7 +26,7 @@ public class AutowiredAnnotationBeanPostProcessor implements BeanPostProcessor {
 						field.setAccessible(true);
 						field.set(bean, autowiredObj);
 						System.out.println("autowire " + fieldName + " for bean " + beanName);
-						System.out.println("autowire " + fieldName + " for bean " + beanName + " : " + autowiredObj);
+						System.out.println("autowire " + fieldName + " for bean " + beanName + " : " + autowiredObj + " class : "+autowiredObj.getClass());
 					} catch (IllegalArgumentException e) {
 						e.printStackTrace();
 					} catch (IllegalAccessException e) {

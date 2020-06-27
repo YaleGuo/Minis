@@ -14,3 +14,5 @@ PooledConnection supported.
 FactoryBean supported. Use JDKDynamicsProxy technology.
 
 methodinterceptor，methodbeforeadvice, afterreturningadvice supported.
+
+ implements Pointcut and AutoProxyCreator.
