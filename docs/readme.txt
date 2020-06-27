@@ -2118,3 +2118,126 @@ URL通过映射机制找到实际的业务逻辑方法。
         <property type="String" name="interceptorName" value="myInterceptor"/>	
 	</bean> 
 	
+	
+5. 
+	到现在为止，我们invoke目标对象的时候，还是写死的method名，程序代码如下：	
+		if (method.getName().equals("doAction")) {
+		}
+	我们需要改造这一点，通过某个给定的规则找到合适的method。	
+
+	所以实现了pointcut，按照方法名匹配规则来匹配advice
+	<bean id="realaction" class="com.test.service.Action1" /> 	
+	<bena id="beforeAdvice" class="com.test.service.MyBeforeAdvice" />
+	
+	<bean id="advisor" class="com.minis.aop.NameMatchMethodPointcutAdvisor">
+        <property type="com.minis.aop.Advice" name="advice" ref="beforeAdvice"/>
+        <property type="String" name="mappedName" value="do*"/>
+    </bean>
+    
+    <bean id="action" class="com.minis.aop.ProxyFactoryBean">
+        <property type="String" name="interceptorName" value="advisor" />
+        <property type="java.lang.Object" name="target" ref="realaction"/>	
+    </bean>
+ 	配置文件中，advisor用了NameMatchMethodPointcutAdvisor，进行名称匹配。
+ 	
+ 	类的定义：
+ 	public class NameMatchMethodPointcutAdvisor implements PointcutAdvisor{
+		private Advice advice = null;
+		private MethodInterceptor methodInterceptor;
+		private String mappedName;
+		private final NameMatchMethodPointcut pointcut = new NameMatchMethodPointcut();
+	}
+	它里面除了advice和methodInterceptor之外，多了一个mappedName和pointcut。
+	如上面的配置例子， <property type="String" name="mappedName" value="do*"/>
+	匹配所有do开头的method。
+	
+	匹配的工作交给NameMatchMethodPointcut来完成：
+	public class NameMatchMethodPointcut implements MethodMatcher,Pointcut{
+		private String mappedName = "";
+	
+		public boolean matches(Method method, Class<?> targetClass) {
+			if (mappedName.equals(method.getName()) || isMatch(method.getName(), mappedName)) {
+				return true;
+			}
+			return false;
+		}
+		protected boolean isMatch(String methodName, String mappedName) {
+			return PatternMatchUtils.simpleMatch(mappedName, methodName);
+		}
+	}
+	其实就是进行字符串的匹配判断。
+	
+	有了这个匹配器，JdkDynamicAopProxy的invoke修改如下：
+	public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+		Class<?> targetClass = (target != null ? target.getClass() : null);
+		
+		//if (method.getName().equals("doAction")) {
+		if (this.advisor.getPointcut().getMethodMatcher().matches(method, targetClass)) {
+			MethodInterceptor interceptor = this.advisor.getMethodInterceptor();
+			MethodInvocation invocation =
+						new ReflectiveMethodInvocation(proxy, target, method, args, targetClass);
+
+			return interceptor.invoke(invocation);
+		}
+		return null;
+	}
+	以前直接判断method名字，现在改成：
+	this.advisor.getPointcut().getMethodMatcher().matches(method, targetClass))
+    
+    
+6. 
+	到现在为止，AOP基本实现了，不过有一个很大的问题，我们看配置文件就知道了：
+    <bean id="action" class="com.minis.aop.ProxyFactoryBean">
+        <property type="String" name="interceptorName" value="advisor" />
+        <property type="java.lang.Object" name="target" ref="realaction"/>	
+    </bean>
+	我们的ProxyFactoryBean有一个target属性，上面的例子给的值是realaction。如果还有
+	第二个第三个目标对象，那么我们要相应地进行配置。一个规模软件，目标对象成百上千，这样的话，
+	配置太麻烦了。
+	
+	所以我们来考虑自动生成代理，用beanpostprocessor实现。
+	将传进来的bean外面包装一个ProxyFactoryBean，改头换面塞进beanfactory。
+	public class BeanNameAutoProxyCreator implements BeanPostProcessor{
+		public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+			if (isMatch(beanName, this.pattern)) {  //简单地根据bean name进行匹配
+				ProxyFactoryBean proxyFactoryBean = new ProxyFactoryBean();
+				proxyFactoryBean.setTarget(bean);
+				proxyFactoryBean.setBeanFactory(beanFactory);
+				proxyFactoryBean.setAopProxyFactory(aopProxyFactory);
+				proxyFactoryBean.setInterceptorName(interceptorName);
+				bean = proxyFactoryBean;
+				return proxyFactoryBean;
+			}
+			else {
+				return bean;
+			}
+		}
+	}
+	
+	这样也要相应修改AbstractBeanFactory的getBean():
+			//beanpostprocessor
+			//step 1 : postProcessBeforeInitialization
+			singleton = applyBeanPostProcessorsBeforeInitialization(singleton, beanName);		
+			//这一步将bean改头换面成proxyfactorybean		
+
+			//step 2 : init-method
+			if (bd.getInitMethodName() != null && !bd.getInitMethodName().equals("")) {
+					invokeInitMethod(bd, singleton);
+			}
+	
+			//step 3 : postProcessAfterInitialization
+			applyBeanPostProcessorsAfterInitialization(singleton, beanName);
+
+			this.removeSingleton(beanName);
+			this.registerBean(beanName, singleton);
+	
+	配置文件既不需要逐个声明proxyfactorybean了，只要声明这个autoProxyCreator就可以了
+	<bean id="autoProxyCreator" class="com.minis.aop.framework.autoproxy.BeanNameAutoProxyCreator" >
+        <property type="String" name="pattern" value="action*" />
+        <property type="String" name="interceptorName" value="advisor" />
+    </bean>
+
+	利用这个机制，动态生成ProxyFactoryBean。
+	这样完整实现了AOP。
+	
+到此为止，我们实现了简单的IoC + MVC + JDBCTemplate + AOP
