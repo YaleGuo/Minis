@@ -732,7 +732,7 @@ public abstract class ClassUtils {
 	 * @return the merged interface as Class
 	 * @throws IllegalArgumentException if the specified interfaces expose
 	 * conflicting method signatures (or a similar constraint is violated)
-	 * @see java.lang.reflect.Proxy#getProxyClass
+	 * @see Proxy#getProxyClass
 	 */
 	@SuppressWarnings("deprecation")  // on JDK 9
 	public static Class<?> createCompositeInterface(Class<?>[] interfaces,  ClassLoader classLoader) {
@@ -890,7 +890,7 @@ public abstract class ClassUtils {
 	 * property format. Strips the outer class name in case of an inner class.
 	 * @param clazz the class
 	 * @return the short name rendered in a standard JavaBeans property format
-	 * @see java.beans.Introspector#decapitalize(String)
+	 * @see Introspector#decapitalize(String)
 	 */
 	public static String getShortNameAsProperty(Class<?> clazz) {
 		String shortName = getShortName(clazz);
