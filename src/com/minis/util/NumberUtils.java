@@ -67,14 +67,14 @@ public abstract class NumberUtils {
 	 * @return the converted number
 	 * @throws IllegalArgumentException if the target class is not supported
 	 * (i.e. not a standard Number subclass as included in the JDK)
-	 * @see java.lang.Byte
-	 * @see java.lang.Short
-	 * @see java.lang.Integer
-	 * @see java.lang.Long
-	 * @see java.math.BigInteger
-	 * @see java.lang.Float
-	 * @see java.lang.Double
-	 * @see java.math.BigDecimal
+	 * @see Byte
+	 * @see Short
+	 * @see Integer
+	 * @see Long
+	 * @see BigInteger
+	 * @see Float
+	 * @see Double
+	 * @see BigDecimal
 	 */
 	@SuppressWarnings("unchecked")
 	public static <T extends Number> T convertNumberToTargetClass(Number number, Class<T> targetClass)
@@ -189,7 +189,7 @@ public abstract class NumberUtils {
 	 * @see #decodeBigInteger(String)
 	 * @see Float#valueOf
 	 * @see Double#valueOf
-	 * @see java.math.BigDecimal#BigDecimal(String)
+	 * @see BigDecimal#BigDecimal(String)
 	 */
 	@SuppressWarnings("unchecked")
 	public static <T extends Number> T parseNumber(String text, Class<T> targetClass) {
@@ -236,7 +236,7 @@ public abstract class NumberUtils {
 	 * @return the parsed number
 	 * @throws IllegalArgumentException if the target class is not supported
 	 * (i.e. not a standard Number subclass as included in the JDK)
-	 * @see java.text.NumberFormat#parse
+	 * @see NumberFormat#parse
 	 * @see #convertNumberToTargetClass
 	 * @see #parseNumber(String, Class)
 	 */
@@ -282,7 +282,7 @@ public abstract class NumberUtils {
 	}
 
 	/**
-	 * Decode a {@link java.math.BigInteger} from the supplied {@link String} value.
+	 * Decode a {@link BigInteger} from the supplied {@link String} value.
 	 * <p>Supports decimal, hex, and octal notation.
 	 * @see BigInteger#BigInteger(String, int)
 	 */
