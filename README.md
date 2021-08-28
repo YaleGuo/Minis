@@ -1,6 +1,6 @@
 # Minis
 
-A mini Spring platform for learning. We plan to implement IoC,MVC,JDBCTemplate and AOP from scratch.
+A mini Spring platform for learning. We plan to implement IoC,MVC,JDBCTemplate,AOP and ThreadPool from scratch.
 
 IoC is the core of Minis. We will use a bean factory to manage all required beans.
 
@@ -16,3 +16,6 @@ FactoryBean supported. Use JDKDynamicsProxy technology.
 methodinterceptor，methodbeforeadvice, afterreturningadvice supported.
 
  implements Pointcut and AutoProxyCreator.
+
+Using annotation + aop implements @Async
+ 
