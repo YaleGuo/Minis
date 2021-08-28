@@ -213,7 +213,7 @@ public abstract class StringUtils {
 	 * Trim leading and trailing whitespace from the given {@code String}.
 	 * @param str the {@code String} to check
 	 * @return the trimmed {@code String}
-	 * @see java.lang.Character#isWhitespace
+	 * @see Character#isWhitespace
 	 */
 	public static String trimWhitespace(String str) {
 		if (!hasLength(str)) {
@@ -239,7 +239,7 @@ public abstract class StringUtils {
 	 * leading, trailing, and in between characters.
 	 * @param str the {@code String} to check
 	 * @return the trimmed {@code String}
-	 * @see java.lang.Character#isWhitespace
+	 * @see Character#isWhitespace
 	 */
 	public static String trimAllWhitespace(String str) {
 		if (!hasLength(str)) {
@@ -261,7 +261,7 @@ public abstract class StringUtils {
 	 * Trim leading whitespace from the given {@code String}.
 	 * @param str the {@code String} to check
 	 * @return the trimmed {@code String}
-	 * @see java.lang.Character#isWhitespace
+	 * @see Character#isWhitespace
 	 */
 	public static String trimLeadingWhitespace(String str) {
 		if (!hasLength(str)) {
@@ -279,7 +279,7 @@ public abstract class StringUtils {
 	 * Trim trailing whitespace from the given {@code String}.
 	 * @param str the {@code String} to check
 	 * @return the trimmed {@code String}
-	 * @see java.lang.Character#isWhitespace
+	 * @see Character#isWhitespace
 	 */
 	public static String trimTrailingWhitespace(String str) {
 		if (!hasLength(str)) {
@@ -334,7 +334,7 @@ public abstract class StringUtils {
 	 * ignoring upper/lower case.
 	 * @param str the {@code String} to check
 	 * @param prefix the prefix to look for
-	 * @see java.lang.String#startsWith
+	 * @see String#startsWith
 	 */
 	public static boolean startsWithIgnoreCase( String str,  String prefix) {
 		return (str != null && prefix != null && str.length() >= prefix.length() &&
@@ -346,7 +346,7 @@ public abstract class StringUtils {
 	 * ignoring upper/lower case.
 	 * @param str the {@code String} to check
 	 * @param suffix the suffix to look for
-	 * @see java.lang.String#endsWith
+	 * @see String#endsWith
 	 */
 	public static boolean endsWithIgnoreCase( String str,  String suffix) {
 		return (str != null && suffix != null && str.length() >= suffix.length() &&
@@ -1119,7 +1119,7 @@ public abstract class StringUtils {
 	 * @param delimiters the delimiter characters, assembled as a {@code String}
 	 * (each of the characters is individually considered as a delimiter)
 	 * @return an array of the tokens
-	 * @see java.util.StringTokenizer
+	 * @see StringTokenizer
 	 * @see String#trim()
 	 * @see #delimitedListToStringArray
 	 */
@@ -1142,7 +1142,7 @@ public abstract class StringUtils {
 	 * (only applies to tokens that are empty after trimming; StringTokenizer
 	 * will not consider subsequent delimiters as token in the first place).
 	 * @return an array of the tokens
-	 * @see java.util.StringTokenizer
+	 * @see StringTokenizer
 	 * @see String#trim()
 	 * @see #delimitedListToStringArray
 	 */
