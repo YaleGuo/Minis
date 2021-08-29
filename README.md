@@ -18,4 +18,6 @@ methodinterceptor，methodbeforeadvice, afterreturningadvice supported.
  implements Pointcut and AutoProxyCreator.
 
 Using annotation + aop implements @Async
+
+REFTful supported
  

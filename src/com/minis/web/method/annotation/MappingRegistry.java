@@ -8,6 +8,8 @@ import java.util.Map;
 
 public class MappingRegistry {
     private List<String> urlMappingNames = new ArrayList<>();
+    private List<String> requestMethods = new ArrayList<>();
+    private List<String> qualifiedNames = new ArrayList<>();
     private Map<String,Object> mappingObjs = new HashMap<>();
     private Map<String,Method> mappingMethods = new HashMap<>();
     private Map<String,String> mappingMethodNames = new HashMap<>();
@@ -42,6 +44,18 @@ public class MappingRegistry {
 	}
 	public void setMappingMethodNames(Map<String,String> mappingMethodNames) {
 		this.mappingMethodNames = mappingMethodNames;
+	}
+	public List<String> getRequestMethods() {
+		return requestMethods;
+	}
+	public void setRequestMethods(List<String> requestMethods) {
+		this.requestMethods = requestMethods;
+	}
+	public List<String> getQualifiedNames() {
+		return qualifiedNames;
+	}
+	public void setQualifiedNames(List<String> qualifiedNames) {
+		this.qualifiedNames = qualifiedNames;
 	}
 
 }

@@ -1,5 +1,7 @@
 package com.minis.util;
 
+import java.util.Arrays;
+
 public abstract class PatternMatchUtils {
 
 	/**
@@ -62,6 +64,29 @@ public abstract class PatternMatchUtils {
 					return true;
 				}
 			}
+		}
+		return false;
+	}
+
+	public static boolean URIMatch( String patterns, String uri) {
+		if (patterns != null) {
+			String[] patternArr= patterns.split("/");
+			String[] uriArr= uri.split("/");
+			
+			System.out.println(Arrays.toString(patternArr));
+			System.out.println(Arrays.toString(uriArr));
+			
+			if (patternArr.length != uriArr.length) {
+				return false;
+			}
+			for (int i=0; i<patternArr.length; i++) {
+				if (patternArr[i].equals(uriArr[i])) {
+				} else if(patternArr[i].startsWith("{") && patternArr[i].endsWith("}")) {
+				} else {
+					return false;
+				}
+			}
+			return true;
 		}
 		return false;
 	}

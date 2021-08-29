@@ -13,6 +13,7 @@ import com.minis.context.ApplicationContext;
 import com.minis.context.ApplicationContextAware;
 import com.minis.http.converter.HttpMessageConverter;
 import com.minis.web.bind.WebDataBinder;
+import com.minis.web.bind.annotation.PathVariable;
 import com.minis.web.bind.annotation.ResponseBody;
 import com.minis.web.bind.support.WebBindingInitializer;
 import com.minis.web.bind.support.WebDataBinderFactory;
@@ -67,19 +68,30 @@ public class RequestMappingHandlerAdapter implements HandlerAdapter,ApplicationC
 			
 			int i = 0;
 			for (Parameter methodParameter : methodParameters) {
-				if (methodParameter.getType()!=HttpServletRequest.class && methodParameter.getType()!=HttpServletResponse.class) {
+				if (methodParameter.getType()==HttpServletRequest.class) {
+					methodParamObjs[i] = request;					
+				}
+				else if (methodParameter.getType()==HttpServletResponse.class) {
+					methodParamObjs[i] = response;					
+				}
+				else if (methodParameter.isAnnotationPresent(PathVariable.class)) {
+					String sServletPath = request.getServletPath();
+					int index = sServletPath.lastIndexOf("/");
+					String sParam = sServletPath.substring(index+1);
+					if (int.class.isAssignableFrom(methodParameter.getType())) {
+					    methodParamObjs[i] = Integer.parseInt(sParam);
+					} else if (String.class.isAssignableFrom(methodParameter.getType())) {
+					    methodParamObjs[i] = sParam;						
+					}
+				}
+				else if (methodParameter.getType()!=HttpServletRequest.class && methodParameter.getType()!=HttpServletResponse.class) {
 					Object methodParamObj = methodParameter.getType().newInstance();
 					WebDataBinder wdb = binderFactory.createBinder(request, methodParamObj, methodParameter.getName());
 					webBindingInitializer.initBinder(wdb);
 					wdb.bind(request);
 					methodParamObjs[i] = methodParamObj;
 				}
-				else if (methodParameter.getType()==HttpServletRequest.class) {
-					methodParamObjs[i] = request;					
-				}
-				else if (methodParameter.getType()==HttpServletResponse.class) {
-					methodParamObjs[i] = response;					
-				}
+				
 				i++;
 			}
 			

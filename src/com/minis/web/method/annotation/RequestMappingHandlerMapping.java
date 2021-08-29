@@ -9,6 +9,7 @@ import javax.servlet.http.HttpServletRequest;
 import com.minis.beans.BeansException;
 import com.minis.context.ApplicationContext;
 import com.minis.context.ApplicationContextAware;
+import com.minis.util.PatternMatchUtils;
 import com.minis.web.bind.annotation.RequestMapping;
 import com.minis.web.context.WebApplicationContext;
 import com.minis.web.method.HandlerMethod;
@@ -43,16 +44,25 @@ public class RequestMappingHandlerMapping implements HandlerMapping,ApplicationC
     				if (isRequestMapping){
     					String methodName = method.getName();
     					String urlmapping = method.getAnnotation(RequestMapping.class).value();
+    					String requestMethod = method.getAnnotation(RequestMapping.class).method();
+    					if (requestMethod.equals("")) {
+    						requestMethod="GET";
+    					}
+    					String qualifiedName = requestMethod + ":" + urlmapping;
+
     					this.mappingRegistry.getUrlMappingNames().add(urlmapping);
-    					this.mappingRegistry.getMappingObjs().put(urlmapping, obj);
-    					this.mappingRegistry.getMappingMethods().put(urlmapping, method);
-    					this.mappingRegistry.getMappingMethodNames().put(urlmapping, methodName);
-    					this.mappingRegistry.getMappingClasses().put(urlmapping, clz);
+    					this.mappingRegistry.getRequestMethods().add(requestMethod);
+    					this.mappingRegistry.getQualifiedNames().add(qualifiedName);
+    					
+    					this.mappingRegistry.getMappingObjs().put(qualifiedName, obj);
+    					this.mappingRegistry.getMappingMethods().put(qualifiedName, method);
+    					this.mappingRegistry.getMappingMethodNames().put(qualifiedName, methodName);
+    					this.mappingRegistry.getMappingClasses().put(qualifiedName, clz);
+    					
     				}
     			}
     		}
     	}
-
     }
 
 
@@ -63,16 +73,35 @@ public class RequestMappingHandlerMapping implements HandlerMapping,ApplicationC
 			initMappings();
 		}
 		
+		for (int i=0; i<this.mappingRegistry.getQualifiedNames().size();i++) {
+			System.out.println(this.mappingRegistry.getQualifiedNames().get(i));
+		}
+		
+		
 		String sPath = request.getServletPath();
-	
-		if (!this.mappingRegistry.getUrlMappingNames().contains(sPath)) {
+		System.out.println("sPath:"+sPath);
+		String sRequestMethod = request.getMethod();
+		String qualifiedName = sRequestMethod+":"+sPath;
+		System.out.println("qualifiedName:"+qualifiedName);
+		
+	    String sPattern = "";
+		
+		for (int i=0; i<this.mappingRegistry.getQualifiedNames().size();i++) {
+		    if (PatternMatchUtils.URIMatch(this.mappingRegistry.getQualifiedNames().get(i), qualifiedName)) {
+		        sPattern = 	this.mappingRegistry.getQualifiedNames().get(i);
+		        break;
+		    }		    
+		}
+		if (sPattern.equals("")) {
 			return null;
 		}
 
-		Method method = this.mappingRegistry.getMappingMethods().get(sPath);
-		Object obj = this.mappingRegistry.getMappingObjs().get(sPath);
-		Class<?> clz = this.mappingRegistry.getMappingClasses().get(sPath);
-		String methodName = this.mappingRegistry.getMappingMethodNames().get(sPath);
+		System.out.println("sPattern:"+sPattern);
+		
+		Method method = this.mappingRegistry.getMappingMethods().get(sPattern);
+		Object obj = this.mappingRegistry.getMappingObjs().get(sPattern);
+		Class<?> clz = this.mappingRegistry.getMappingClasses().get(sPattern);
+		String methodName = this.mappingRegistry.getMappingMethodNames().get(sPattern);
 	
 		HandlerMethod handlerMethod = new HandlerMethod(method, obj, clz, methodName);
 		
