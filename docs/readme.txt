@@ -2241,3 +2241,659 @@ URL通过映射机制找到实际的业务逻辑方法。
 	这样完整实现了AOP。
 	
 到此为止，我们实现了简单的IoC + MVC + JDBCTemplate + AOP
+
+未来可以进一步扩展：
+1 CGLIB支持
+2 AspectJ支持
+3 Expression Language
+4 List型的ioc注入
+5 多种数据类型的convert和bind
+6 支持JMS
+7 完善Exception体系
+8 完善Event体系
+9 支持reactive编程
+10 Transaction
+11 Scripting
+12 threadpool
+13 高并发
+14 RESTful
+
+
+-----------------------------------ThreadPool--------------------------------------
+1.
+	基于Java ThreadPoolExecutor实现ThreadPoolTaskExecutor
+	
+	Java中的java.util.concurrent.ThreadPoolExecutor已经进行打下了很好的基础，
+	我们直接包装ThreadPoolExecutor:
+	public class ThreadPoolTaskExecutor{
+		private int corePoolSize = 1;
+		private int maxPoolSize = Integer.MAX_VALUE;
+		private int keepAliveSeconds = 60;
+		private int queueCapacity = Integer.MAX_VALUE;
+		private RejectedExecutionHandler rejectedExecutionHandler = new ThreadPoolExecutor.DiscardPolicy();
+		
+		private ThreadPoolExecutor threadPoolExecutor;
+
+		public ExecutorService initializeExecutor() {
+			BlockingQueue<Runnable> queue = createQueue(this.queueCapacity);
+	
+			ThreadPoolExecutor executor;
+			executor = new ThreadPoolExecutor(
+				this.corePoolSize, this.maxPoolSize, this.keepAliveSeconds, TimeUnit.SECONDS,
+				queue,Executors.defaultThreadFactory(),this.rejectedExecutionHandler);
+	
+			this.threadPoolExecutor = executor;
+			return executor;
+		}
+		public void execute(Runnable task) {
+			Executor executor = getThreadPoolExecutor();
+			executor.execute(task);
+		}
+		public <T> Future<T> submit(Callable<T> task) {
+			ExecutorService executor = getThreadPoolExecutor();
+			return executor.submit(task);
+		}
+	}
+	提供一个初始化方法initializeExecutor()。
+	执行的时候，直接调用Java ExecutorService的execute()和submit()。
+	
+	然后把这个包装的类作为一个bean注入:
+	<bean id="taskExecutor" class="com.minis.scheduling.concurrent.ThreadPoolTaskExecutor"  init-method="initializeExecutor">
+  		<property type="int" name="corePoolSize" value="2" />
+   		<property type="int" name="maxPoolSize" value="4" />
+   		<property type="int" name="queueCapacity" value="2" />
+   		<property type="int" name="keepAliveSeconds" value="60" />
+	</bean>
+	
+	这一步看起来没有意义，没有给java.util.concurrent.ThreadPoolExecutor添加任何扩展，
+	只是一个包装。但是我们接下来会给它里面添加内容。因为java.util.concurrent.ThreadPoolExecutor
+	有一个很大的缺陷：它sumbit返回Future<>后，时阻塞的方式，循环尝试返回值，而不能在执行别的逻辑的同时监听是否
+	执行完毕，所以，我们可以给java.util.concurrent.ThreadPoolExecutor添加监听功能。
+	
+	做一个接口，扩展Future:
+	public interface ListenableFuture<T> extends Future<T> {
+		void addCallback(SuccessCallback<? super T> successCallback, FailureCallback failureCallback);
+	}
+	给Java的Future添加回调功能，结束时，成功时执行什么，失败时执行什么。
+	问题来了：怎么能知道这个异步线程结束了呢？又如何判定成功还是失败呢？
+	其实，Java已经做了这样的设计。
+	我们来看FutureTask的实现，执行线程最后会执行到run()，核心代码:
+		Callable<V> c = callable;
+        if (c != null && state == NEW) {
+            V result;
+            boolean ran;
+            try {
+                result = c.call();
+                ran = true;
+            } catch (Throwable ex) {
+                result = null;
+                ran = false;
+                setException(ex);
+            }
+            if (ran)
+                set(result);
+        }
+		我们看到了，线程执行完毕后，会调用set(result),而 run 方法中的 set 方法
+		将线程的执行结果通知出去，在 set 方法中可以发现其调用了 finishCompletion 方法，
+		finishCompletion 方法会一直循环判断线程池中的队列的任务是否执行了，一旦执行了
+		就会调用 done 方法。
+		
+		所以我们就用一个子类ListenableFutureTask，定义如下：
+		public class ListenableFutureTask<T> extends FutureTask<T> implements ListenableFuture<T>{
+			private final ListenableFutureCallbackRegistry<T> callbacks = new ListenableFutureCallbackRegistry<>();
+			public void addCallback(SuccessCallback<? super T> successCallback, FailureCallback failureCallback) {
+				this.callbacks.addSuccessCallback(successCallback);
+				this.callbacks.addFailureCallback(failureCallback);
+			}
+		}
+		我们就可以在ListenableFutureTask类中override 这个done()方法，进行执行结束后的通知。
+		@Override
+		protected void done() {
+		Throwable cause;
+		try {
+			T result = get();
+			this.callbacks.success(result);
+			return;
+		}
+		catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+			return;
+		}
+		catch (ExecutionException ex) {
+			cause = ex.getCause();
+			if (cause == null) {
+				cause = ex;
+			}
+		}
+		catch (Throwable ex) {
+			cause = ex;
+		}
+		this.callbacks.failure(cause);
+		}
+		我们在done()方法中调用get(),这是阻塞式的，但是这个时候已经是在另一个异步线程了，所以不会阻塞
+		调用主程序。再根据情况调用回调成功方法或者失败方法。
+	
+		使用者很简单，先申明一个bean:
+		@Autowired
+		ThreadPoolTaskExecutor taskExecutor;
+		
+		这么调用：
+		taskExecutor.submitListenable(()->{
+			try {
+		        Thread.sleep(2000);
+		        System.out.println("Thread " + Thread.currentThread().getName());
+		        return 1;
+		    } catch (InterruptedException e) {
+		        e.printStackTrace();
+		    }
+			return 0;
+		}).addCallback(data->{System.out.println("sucess "+data);}, 
+					ex->System.out.println("sucess "+ex));
+	
+	由于我们在result中给定callback，而这又是异步时序，所以可能碰到在程序主体执行完后callback还有没加上的情况。
+	这就是为什么ListenableFutureCallbackRegistry中要判断state的原因。
+	public void addSuccessCallback(SuccessCallback<? super T> callback) {
+		synchronized (this.mutex) {
+			switch (this.state) {
+				case NEW:
+					this.successCallbacks.add(callback);
+					break;
+				case SUCCESS:
+					notifySuccess(callback);
+					break;
+			}
+		}
+	}
+	
+	public void addFailureCallback(FailureCallback callback) {
+		synchronized (this.mutex) {
+			switch (this.state) {
+				case NEW:
+					this.failureCallbacks.add(callback);
+					break;
+				case FAILURE:
+					notifyFailure(callback);
+					break;
+			}
+		}
+	}
+	
+	我希望JDK以后能改进一下，不要让Future影响业务逻辑，应该提供一个关键字。
+	
+	另外，我们还注意到一个task一旦reject之后，默认就是被抛弃了，Java内置提供了四种策略，都是抛弃。
+	我们也可以提供一个可重入的策略：
+	其实也很简单,java的RejectedExecutionHandler接口提供rejectedExecution，我们override就可以了：
+	public class ReentryRejectedExecutionHandler implements RejectedExecutionHandler {
+	@Override
+	public void rejectedExecution(Runnable worker, ThreadPoolExecutor executor) {
+        if (!executor.isShutdown()) {
+    	    try{
+                executor.getQueue().put(worker);
+    	    }
+    	    catch(Exception e) {
+    	        System.out.println("Failure to Re-exicute "+e.getMessage());
+    	    }
+        }
+	}
+	}
+	也就是将这个任务简单地再放到等待队列中即可。
+	
+	
+2. 增加@Async注解
+	现在使用者这么调用，还是自己手工用executor：
+	public void sayHello() {
+		taskExecutor.submit(()->{
+			try {
+		        Thread.sleep(2000);
+		        System.out.println("say hello. Thread " + Thread.currentThread().getName());
+		    } catch (InterruptedException e) {
+		        e.printStackTrace();
+		    }
+		});
+	}
+	
+	我们希望业务程序不用管异步线程的问题，只要把自己声明为异步即可。
+	@Async
+	public void sayHello() {
+	    System.out.println("say hello. Thread " + Thread.currentThread().getName());
+	}
+
+	首先定义注解	
+	@Target({ElementType.TYPE, ElementType.METHOD})
+	@Retention(RetentionPolicy.RUNTIME)
+	public @interface Async {
+		String value() default "";
+	}
+	
+	然后定义对注解的处理程序,简单地想想，还是用beanpostprocessor:
+	public class AsyncAnnotationBeanPostProcessor implements BeanPostProcessor,BeanFactoryAware{
+		private BeanFactory beanFactory;
+		@Override
+		public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+			Object result = bean;
+			
+			Class<?> clazz = bean.getClass();
+			Method[] methods = clazz.getDeclaredMethods();
+			if(methods!=null){
+				for(Method method : methods){
+					boolean isAsync = method.isAnnotationPresent(Async.class);
+		
+					if(isAsync){
+						System.out.println("AsyncAnnotationBeanPostProcessor is Async. ");
+						... ... 
+					}
+				}
+			}		
+			return result;
+		}
+	}
+	
+	现在的问题是如何实现这个处理？要怎么做才可以让这个@Async方法在线程中异步执行呢？
+	肯定还是自动加上executor，给这个方法套一个proxy，于是我么你想到了用以前的AOP.
+	
+	回过头看以前的AOP实现，有一个动态代理生成的类：
+	public class JdkDynamicAopProxy implements AopProxy, InvocationHandler {
+		Object target;
+		PointcutAdvisor advisor;
+		
+		public Object getProxy() {
+			Object obj = Proxy.newProxyInstance(JdkDynamicAopProxy.class.getClassLoader(), target.getClass().getInterfaces(), this);
+			return obj;
+		}
+	
+		public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+			Class<?> targetClass = (target != null ? target.getClass() : null);
+			
+			if (this.advisor.getPointcut().getMethodMatcher().matches(method, targetClass)) {
+				MethodInterceptor interceptor = this.advisor.getMethodInterceptor();
+				MethodInvocation invocation =
+							new ReflectiveMethodInvocation(proxy, target, method, args, targetClass);
+	
+				return interceptor.invoke(invocation);
+			}
+			return null;
+		}
+	}
+	里面包含了一个PointcutAdvisor，用于对target进行修饰(interceptor)。
+	现在需要扩展了了，我们用一个新的Advisor：AsyncAnnotationAdvisor。
+	程序修改为：
+	public class JdkDynamicAopProxy implements AopProxy, InvocationHandler {
+		Object target;
+		Advisor advisor;  //should be a list to support multiple advisors
+	
+		public Object getProxy() {
+			Object obj = Proxy.newProxyInstance(JdkDynamicAopProxy.class.getClassLoader(), target.getClass().getInterfaces(), this);
+			return obj;
+		}
+	
+		@Override
+		public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+			Class<?> targetClass = (target != null ? target.getClass() : null);
+			if (this.advisor instanceof PointcutAdvisor) {
+				if (((PointcutAdvisor)this.advisor).getPointcut().getMethodMatcher().matches(method, targetClass)) {
+					MethodInterceptor interceptor = this.advisor.getMethodInterceptor();
+					MethodInvocation invocation =
+								new ReflectiveMethodInvocation(proxy, target, method, args, targetClass);
+					return interceptor.invoke(invocation);
+				}
+			}
+			if (this.advisor instanceof AsyncAnnotationAdvisor) {
+				MethodInterceptor interceptor = this.advisor.getMethodInterceptor();
+				MethodInvocation invocation =
+							new ReflectiveMethodInvocation(proxy, target, method, args, targetClass);
+				return interceptor.invoke(invocation);			
+			}
+			return null;
+		}
+	}
+	对PointcutAdvisor和AsyncAnnotationAdvisor分别处理(此处不通用，缺陷)。
+	
+	我们再看AsyncAnnotationAdvisor：
+	public class AsyncAnnotationAdvisor  implements Advisor{
+		MethodInterceptor methodInterceptor;
+	}
+	它内部就是包含了一个methodInterceptor.在这个interceptor中我们实现异步线程。
+	定义：
+	public class AsyncExecutionInterceptor implements MethodInterceptor{
+		ThreadPoolTaskExecutor executor;
+		
+		public Object invoke(final MethodInvocation invocation) throws Throwable {
+			Callable<Object> task = () -> {
+				try {
+					Object result = invocation.proceed();
+					if (result instanceof Future) {
+						return ((Future<?>) result).get();
+					}
+				}
+				catch (ExecutionException ex) {
+					throw ex;
+				}
+				catch (Throwable ex) {
+				}
+				return null;
+			};
+	
+			return doSubmit(task, executor, invocation.getMethod().getReturnType());
+		}
+		
+		protected Object doSubmit(Callable<Object> task, ThreadPoolTaskExecutor executor, Class<?> returnType) {
+			if (ListenableFuture.class.isAssignableFrom(returnType)) {
+				return executor.submitListenable(task);
+			}
+			else if (Future.class.isAssignableFrom(returnType)) {
+				return executor.submit(task);
+			}
+			else {
+				executor.submit(task);
+				return null;
+			}
+		}	
+	}
+
+	有了这些之后，我们就可以在	AsyncAnnotationBeanPostProcessor中，动态生成这个代理，
+	public class AsyncAnnotationBeanPostProcessor implements BeanPostProcessor,BeanFactoryAware{
+	private BeanFactory beanFactory;
+
+	@Override
+	public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+		Object result = bean;
+		
+		Class<?> clazz = bean.getClass();
+		Method[] methods = clazz.getDeclaredMethods();
+		if(methods!=null){
+			for(Method method : methods){
+				boolean isAsync = method.isAnnotationPresent(Async.class);
+	
+				if(isAsync){
+					System.out.println("AsyncAnnotationBeanPostProcessor is Async. "); 
+					AopProxyFactory proxyFactory = new DefaultAopProxyFactory();
+					ProxyFactoryBean proxyFactoryBean = new ProxyFactoryBean();
+					Advisor advisor = (Advisor)beanFactory.getBean("asyncAnnotationAdvisor");
+					MethodInterceptor methodInterceptor = (AsyncExecutionInterceptor)beanFactory.getBean("asyncExecutionInterceptor");
+					advisor.setMethodInterceptor(methodInterceptor);
+					proxyFactoryBean.setTarget(bean);
+					proxyFactoryBean.setBeanFactory(beanFactory);
+					proxyFactoryBean.setAopProxyFactory(proxyFactory);
+					proxyFactoryBean.setInterceptorName("asyncAnnotationAdvisor");
+					bean = proxyFactoryBean;
+					return proxyFactoryBean;
+				}
+			}
+		}
+		
+		return result;
+	}
+	
+	
+	为支持callback，我们实现：
+	public class AsyncResult<V> implements ListenableFuture<V> {
+	private final V value;
+	private final Throwable executionException;
+
+	private AsyncResult(V value, Throwable ex) {
+		this.value = value;
+		this.executionException = ex;
+	}
+
+	public V get() {
+		return this.value;
+	}
+
+	@Override
+	public void addCallback(SuccessCallback<? super V> successCallback, FailureCallback failureCallback) {
+		try {
+			if (this.executionException != null) {
+				failureCallback.onFailure(this.executionException);
+			}
+			else {
+				successCallback.onSuccess(this.value);
+			}
+		}
+		catch (Throwable ex) {
+		}
+	}
+}
+	
+	服务类：
+	@Async
+	public Boolean sayHello(SuccessCallback<? super Boolean> successCallback, FailureCallback failureCallback){
+		System.out.println("Base Service says hello.Execute method asynchronously. "  
+			      + Thread.currentThread().getName());
+		ListenableFuture<Boolean> result = new AsyncResult<>(true);
+		result.addCallback(successCallback,	failureCallback);
+
+		return true;
+	}
+	使用者：
+		Boolean result = 
+				baseservice.sayHello(data->{System.out.println("sucess "+data);}, 
+								ex->System.out.println("failure "+ex));
+
+	或者这样：
+	服务类：
+	@Async
+	public ListenableFuture<Boolean> sayHello(){
+		System.out.println("Base Service says hello.Execute method asynchronously. "  
+			      + Thread.currentThread().getName());
+		ListenableFuture<Boolean> result = new AsyncResult<>(true);
+
+		return result;
+	}
+	使用者：
+		ListenableFuture<Boolean> result = 
+				baseservice.sayHello(data->{System.out.println("sucess "+data);}, 
+								ex->System.out.println("failure "+ex)
+				).addCallback(successCallback,	failureCallback);
+		
+	可以看出，对服务类来讲，线程异步还是介入式的，理想的应该不用管同步异步，估计要给Java增加关键字修改JDK才行。
+	
+	
+	另外因为是用的JDK动态代理，只能实现interface上的代理，所以使用者需要实现一个interface:
+	public class BaseService implements IService
+	
+	
+3. RESTful支持
+	REST不是一个实体api，而是一种风格,四个动词GET PUT UPDATE DELETE
+	例如：GET /user/{id}
+	所以我们只需要MVC的基础上增加这种风格就可以。
+	
+	我们希望controller这一层这样写：
+	@RequestMapping(value="/testrest/{id}",method="GET")
+	@ResponseBody
+	public User doTestRestGet(@PathVariable int id, HttpServletRequest request, HttpServletResponse response) {
+		User user = userService.getUserInfo(id);		
+		return user;
+	}	
+	
+	因为在request中要支持这四个动词，所以我们需要改造一下RequestMapping。
+	我们将会以method：uri的方式存储这个mapping，我们叫它qualifiedNames：
+	public class MappingRegistry {
+	    private List<String> urlMappingNames = new ArrayList<>();
+	    private List<String> requestMethods = new ArrayList<>();
+	    private List<String> qualifiedNames = new ArrayList<>();
+	    private Map<String,Object> mappingObjs = new HashMap<>();
+	    private Map<String,Method> mappingMethods = new HashMap<>();
+	    private Map<String,String> mappingMethodNames = new HashMap<>();
+	    private Map<String,Class<?>> mappingClasses = new HashMap<>();
+	}
+
+	改写RequestMappingHandlerMapping类：
+    for(Method method : methods){
+    	boolean isRequestMapping = method.isAnnotationPresent(RequestMapping.class);
+    	if (isRequestMapping){
+    		String methodName = method.getName();
+    		String urlmapping = method.getAnnotation(RequestMapping.class).value();
+    		String requestMethod = method.getAnnotation(RequestMapping.class).method();
+    		if (requestMethod.equals("")) {
+    			requestMethod="GET";
+    		}
+    		String qualifiedName = requestMethod + ":" + urlmapping;
+
+			this.mappingRegistry.getUrlMappingNames().add(urlmapping);
+			this.mappingRegistry.getRequestMethods().add(requestMethod);
+			this.mappingRegistry.getQualifiedNames().add(qualifiedName);
+   					
+			this.mappingRegistry.getMappingObjs().put(qualifiedName, obj);
+			this.mappingRegistry.getMappingMethods().put(qualifiedName, method);
+			this.mappingRegistry.getMappingMethodNames().put(qualifiedName, methodName);
+			this.mappingRegistry.getMappingClasses().put(qualifiedName, clz);
+		}
+	}
+	
+	由上可知，对于以下的声明：
+	@RequestMapping(value="/testrest/{id}",method="GET")
+	系统中将把qualifiedName存为GET:/testrest/{id}
+		
+	这样当来了一个实际的uri请求时，如/testrest/1,我们不能再像以前一样找这个串，因为registry
+	里面保存的时{id}，而实际uri是1，所以是要进行模式匹配。
+	for (int i=0; i<this.mappingRegistry.getQualifiedNames().size();i++) {
+	    if (PatternMatchUtils.URIMatch(this.mappingRegistry.getQualifiedNames().get(i), qualifiedName)) {
+	        sPattern = 	this.mappingRegistry.getQualifiedNames().get(i);
+	        break;
+	    }		    
+	}
+	这个PatternMatchUtils.URIMatch()写得很简单，只能处理简单情况，旨在说明问题。
+	
+	URI中有参数，我们需要解析这个URI，把参数解析出来，增加@PathVariable。
+	我们在bing.annotation包中增加PathVariable注解：
+	@Target(ElementType.PARAMETER)
+	@Retention(RetentionPolicy.RUNTIME)
+	public @interface PathVariable {
+	}
+	
+	我们在RequestMappingHandlerAdapter类中这么处理这个参数：
+		else if (methodParameter.isAnnotationPresent(PathVariable.class)) {
+			String sServletPath = request.getServletPath();
+			int index = sServletPath.lastIndexOf("/");
+			String sParam = sServletPath.substring(index+1);
+			if (int.class.isAssignableFrom(methodParameter.getType())) {
+			    methodParamObjs[i] = Integer.parseInt(sParam);
+			} else if (String.class.isAssignableFrom(methodParameter.getType())) {
+			    methodParamObjs[i] = sParam;						
+			}
+		}
+	从sServletPath中把这个实际参数获取到并bind到变量中。
+	
+	这样，我们就可以支持rest风格了。
+	
+-----------------------------------mBatis--------------------------------------
+1, 仿iBatis,把SQL语句放到程序外面的配置文件中mapper/User_Mapper.xml：
+	<?xml version="1.0" encoding="UTF-8"?>
+	<mapper namespace="com.test.entity.User">
+	    <select id="getUserInfo" parameterType="java.lang.Integer" resultType="com.test.entity.User">
+	        select id, name,birthday 
+	        from users 
+	        where id=?
+	    </select>
+	</mapper>
+	
+	我们内部用一个结构来保存系统中的所有SQL语句的定义：
+	public class MapperNode {
+	    String namespace;
+	    String id;
+	    String parameterType;
+	    String resultType;
+	    String sql;
+	    String parameter;
+	}
+	
+	在启动的配置xml中，我们在一个bean(DefaultSqlSessionFactory)的初始化过程中扫描sql定义文件目录：
+	public void init() {
+	    scanLocation(this.mapperLocations);
+	}
+	
+	private void scanLocation(String location) {
+    	String sLocationPath = this.getClass().getClassLoader().getResource("").getPath()+location;
+        File dir = new File(sLocationPath);
+        for (File file : dir.listFiles()) {
+            if(file.isDirectory()){
+            	scanLocation(location+"/"+file.getName());
+            }else{
+                buildMapperNodes(location+"/"+file.getName());
+            }
+        }
+    }
+	扫描的过程中将SQL定义写到内部注册表Map中：
+	private Map<String, MapperNode> buildMapperNodes(String filePath) {
+        SAXReader saxReader=new SAXReader();
+        URL xmlPath=this.getClass().getClassLoader().getResource(filePath);
+
+		Document document = saxReader.read(xmlPath);
+		Element rootElement=document.getRootElement();
+
+		String namespace = rootElement.attributeValue("namespace");
+
+        Iterator<Element> nodes = rootElement.elementIterator();;
+        while (nodes.hasNext()) {
+        	Element node = nodes.next();
+            String id = node.attributeValue("id");
+            String parameterType = node.attributeValue("parameterType");
+            String resultType = node.attributeValue("resultType");
+            String sql = node.getText();
+                
+            MapperNode selectnode = new MapperNode();
+            selectnode.setNamespace(namespace);
+            selectnode.setId(id);
+            selectnode.setParameterType(parameterType);
+            selectnode.setResultType(resultType);
+            selectnode.setSql(sql);
+            selectnode.setParameter("");
+                
+            this.mapperNodeMap.put(namespace + "." + id, selectnode);
+        }
+	    return this.mapperNodeMap;
+	}
+	可以看到，map的id是namespace+"."+id,对上例即com.test.entity.User.getUserInfo
+	
+	注册上面的bean：
+	<bean id="sqlSessionFactory" class="com.minis.batis.DefaultSqlSessionFactory" init-method="init">
+        <property type="String" name="mapperLocations" value="mapper"></property>
+    </bean>
+	
+	用户使用的时候，
+	public class UserService {
+		@Autowired
+		SqlSessionFactory sqlSessionFactory;
+
+		public User getUserInfo(int userid) {
+			//final String sql = "select id, name,birthday from users where id=?";
+			String sqlid = "com.test.entity.User.getUserInfo";
+			SqlSession sqlSession = sqlSessionFactory.openSession();
+			return (User)sqlSession.selectOne(sqlid, new Object[]{new Integer(userid)},
+					(pstmt)->{			
+						ResultSet rs = pstmt.executeQuery();
+						User rtnUser = null;
+						if (rs.next()) {
+							rtnUser = new User();
+							rtnUser.setId(userid);
+							rtnUser.setName(rs.getString("name"));
+							rtnUser.setBirthday(new java.util.Date(rs.getDate("birthday").getTime()));
+						} else {
+						}
+						return rtnUser;
+					}
+			);
+		}
+	}
+	基本于以前直接用jdbc tempalte一样，只是变成了：
+	sqlSessionFactory.openSession();
+	通过sqlSession.selectOne执行。
+	public class DefaultSqlSession implements SqlSession{
+		JdbcTemplate jdbcTemplate;
+		SqlSessionFactory sqlSessionFactory;
+
+		@Override
+		public Object selectOne(String sqlid, Object[] args, PreparedStatementCallback pstmtcallback) {
+			String sql = this.sqlSessionFactory.getMapperNode(sqlid).getSql();
+			
+			return jdbcTemplate.query(sql, args, pstmtcallback);
+		}
+		
+		private void buildParameter(){
+		}
+		
+		private Object resultSet2Obj() {
+			return null;
+		}
+	}
+	可以看出，最终还是落到了jdbcTemplate.query(sql, args, pstmtcallback)。
