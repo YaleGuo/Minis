@@ -20,4 +20,6 @@ methodinterceptor，methodbeforeadvice, afterreturningadvice supported.
 Using annotation + aop implements @Async
 
 REFTful supported
+
+Implemented mBatis based on JDBC Template.
  
