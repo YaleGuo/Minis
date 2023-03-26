@@ -4,8 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import com.sun.corba.se.impl.encoding.OSFCodeSetRegistry.Entry;
-
 public class PropertyValues{
 	private final List<PropertyValue> propertyValueList;
 

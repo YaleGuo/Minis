@@ -13,15 +13,27 @@
 	<bean id="baseservice" class="com.test.service.BaseService" /> 
 	<bean id="userService" class="com.test.service.UserService" />
 	
-	<bean id="myInterceptor" class="com.test.service.MyInterceptor" />
-	 
-	<bean id="realaction" class="com.test.service.Action1" /> 
 	
+<!-- 	<bean id="realaction" class="com.test.service.Action1" /> 	
 	<bean id="action" class="com.minis.aop.ProxyFactoryBean" >
         <property type="java.lang.Object" name="target" ref="realaction"/>	
         <property type="String" name="interceptorName" value="myInterceptor"/>	
-	</bean> 
+	</bean>  -->
 	
+	<bean id="realaction" class="com.test.service.Action1" /> 
+	
+	<bena id="beforeAdvice" class="com.test.service.MyBeforeAdvice" />
+	<bean id="advisor" class="com.minis.aop.NameMatchMethodPointcutAdvisor">
+        <property type="com.minis.aop.Advice" name="advice" ref="beforeAdvice"/>
+        <property type="String" name="mappedName" value="do*"/>
+    </bean>
+    
+    <bean id="action" class="com.minis.aop.ProxyFactoryBean">
+        <property type="String" name="interceptorName" value="advisor" />
+        <property type="java.lang.Object" name="target" ref="realaction"/>	
+    </bean>
+	
+
 	
 <!-- 	<bean id="dataSource" class="com.minis.jdbc.datasource.SingleConnectionDataSource">
 	<property type="String" name="driverClassName" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>

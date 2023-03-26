@@ -2118,3 +2118,68 @@ URL通过映射机制找到实际的业务逻辑方法。
         <property type="String" name="interceptorName" value="myInterceptor"/>	
 	</bean> 
 	
+	
+5. 
+	到现在为止，我们invoke目标对象的时候，还是写死的method名，程序代码如下：	
+		if (method.getName().equals("doAction")) {
+		}
+	我们需要改造这一点，通过某个给定的规则找到合适的method。	
+
+	所以实现了pointcut，按照方法名匹配规则来匹配advice
+	<bean id="realaction" class="com.test.service.Action1" /> 	
+	<bena id="beforeAdvice" class="com.test.service.MyBeforeAdvice" />
+	
+	<bean id="advisor" class="com.minis.aop.NameMatchMethodPointcutAdvisor">
+        <property type="com.minis.aop.Advice" name="advice" ref="beforeAdvice"/>
+        <property type="String" name="mappedName" value="do*"/>
+    </bean>
+    
+    <bean id="action" class="com.minis.aop.ProxyFactoryBean">
+        <property type="String" name="interceptorName" value="advisor" />
+        <property type="java.lang.Object" name="target" ref="realaction"/>	
+    </bean>
+ 	配置文件中，advisor用了NameMatchMethodPointcutAdvisor，进行名称匹配。
+ 	
+ 	类的定义：
+ 	public class NameMatchMethodPointcutAdvisor implements PointcutAdvisor{
+		private Advice advice = null;
+		private MethodInterceptor methodInterceptor;
+		private String mappedName;
+		private final NameMatchMethodPointcut pointcut = new NameMatchMethodPointcut();
+	}
+	它里面除了advice和methodInterceptor之外，多了一个mappedName和pointcut。
+	如上面的配置例子， <property type="String" name="mappedName" value="do*"/>
+	匹配所有do开头的method。
+	
+	匹配的工作交给NameMatchMethodPointcut来完成：
+	public class NameMatchMethodPointcut implements MethodMatcher,Pointcut{
+		private String mappedName = "";
+	
+		public boolean matches(Method method, Class<?> targetClass) {
+			if (mappedName.equals(method.getName()) || isMatch(method.getName(), mappedName)) {
+				return true;
+			}
+			return false;
+		}
+		protected boolean isMatch(String methodName, String mappedName) {
+			return PatternMatchUtils.simpleMatch(mappedName, methodName);
+		}
+	}
+	其实就是进行字符串的匹配判断。
+	
+	有了这个匹配器，JdkDynamicAopProxy的invoke修改如下：
+	public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+		Class<?> targetClass = (target != null ? target.getClass() : null);
+		
+		//if (method.getName().equals("doAction")) {
+		if (this.advisor.getPointcut().getMethodMatcher().matches(method, targetClass)) {
+			MethodInterceptor interceptor = this.advisor.getMethodInterceptor();
+			MethodInvocation invocation =
+						new ReflectiveMethodInvocation(proxy, target, method, args, targetClass);
+
+			return interceptor.invoke(invocation);
+		}
+		return null;
+	}
+	以前直接判断method名字，现在改成：
+	this.advisor.getPointcut().getMethodMatcher().matches(method, targetClass))

@@ -1,10 +1,10 @@
 package com.test.service;
 
-public class Action1 implements IAction {
+public class Action2 implements IAction {
 
 	@Override
 	public void doAction() {
-		System.out.println("really do action1");
+		System.out.println("really do action2");
 		
 	}
 
