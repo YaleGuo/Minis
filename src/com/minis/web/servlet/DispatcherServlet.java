@@ -1,32 +1,20 @@
 package com.minis.web.servlet;
 
-import java.io.File;
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
+
 import java.util.Map;
+import java.util.Properties;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import com.minis.beans.BeansException;
-import com.minis.beans.factory.annotation.Autowired;
-import com.minis.web.AnnotationConfigWebApplicationContext;
-import com.minis.web.RequestMapping;
-import com.minis.web.WebApplicationContext;
-import com.minis.web.XmlScanComponentHelper;
-import com.test.controller.HelloWorldBean;
+import com.minis.web.context.WebApplicationContext;
+import com.minis.web.context.support.AnnotationConfigWebApplicationContext;
+import com.minis.web.method.HandlerMethod;
+import com.minis.web.method.annotation.RequestMappingHandlerMapping;
 
 /**
  * Servlet implementation class DispatcherServlet
@@ -34,11 +22,26 @@ import com.test.controller.HelloWorldBean;
 public class DispatcherServlet extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 	public static final String WEB_APPLICATION_CONTEXT_ATTRIBUTE = DispatcherServlet.class.getName() + ".CONTEXT";
+	public static final String HANDLER_MAPPING_BEAN_NAME = "handlerMapping";
+	public static final String HANDLER_ADAPTER_BEAN_NAME = "handlerAdapter";
+	public static final String MULTIPART_RESOLVER_BEAN_NAME = "multipartResolver";
+	public static final String LOCALE_RESOLVER_BEAN_NAME = "localeResolver";
+	public static final String HANDLER_EXCEPTION_RESOLVER_BEAN_NAME = "handlerExceptionResolver";
+	public static final String REQUEST_TO_VIEW_NAME_TRANSLATOR_BEAN_NAME = "viewNameTranslator";
+	public static final String VIEW_RESOLVER_BEAN_NAME = "viewResolver";
+	private static final String DEFAULT_STRATEGIES_PATH = "DispatcherServlet.properties";
+	private static final Properties defaultStrategies = null;
+	
 	private WebApplicationContext webApplicationContext;
 	private WebApplicationContext parentApplicationContext;
 	
     private String sContextConfigLocation; 
     
+	//private MultipartResolver multipartResolver;
+	//private LocaleResolver localeResolver;
+	//private HandlerExceptionResolver handlerExceptionResolvers;
+	//private RequestToViewNameTranslator viewNameTranslator;
+
 	private HandlerMapping handlerMapping;
 	private HandlerAdapter handlerAdapter;
 	private ViewResolver viewResolver;
@@ -69,15 +72,27 @@ public class DispatcherServlet extends HttpServlet {
     }
     
     protected void initHandlerMappings(WebApplicationContext wac) {
-    	this.handlerMapping = new RequestMappingHandlerMapping(wac);
+    	try {
+			this.handlerMapping = (HandlerMapping) wac.getBean(HANDLER_MAPPING_BEAN_NAME);
+		} catch (BeansException e) {
+			e.printStackTrace();
+		}
     	
     }
     protected void initHandlerAdapters(WebApplicationContext wac) {
-    	this.handlerAdapter = new RequestMappingHandlerAdapter(wac);
+    	try {
+			this.handlerAdapter = (HandlerAdapter) wac.getBean(HANDLER_ADAPTER_BEAN_NAME);
+		} catch (BeansException e) {
+			e.printStackTrace();
+		}
     	
     }
     protected void initViewResolvers(WebApplicationContext wac) {
-    	
+    	try {
+			this.viewResolver = (ViewResolver) wac.getBean(VIEW_RESOLVER_BEAN_NAME);
+		} catch (BeansException e) {
+			e.printStackTrace();
+		}
     }
     
 	@Override
@@ -107,21 +122,21 @@ public class DispatcherServlet extends HttpServlet {
 
 		mv = ha.handle(processedRequest, response, handlerMethod);
 
-		//render(processedRequest, response, mv);
+		render(processedRequest, response, mv);
 	}
 	
 	protected void render( HttpServletRequest request, HttpServletResponse response,ModelAndView mv) throws Exception {
-		View view;
-		String viewName = mv.getViewName();
-		if (viewName != null) {
-			// We need to resolve the view name.
-			view = resolveViewName(viewName, mv.getModel(), request);
+		if (mv == null) {
+			response.getWriter().flush();
+			response.getWriter().close();
+			return;
 		}
-		else {
-			view = mv.getView();
-		}
-
-		view.render(mv.getModel(), request, response);
+		
+		String sTarget = mv.getViewName();
+		Map<String, Object> modelMap = mv.getModel();
+		View view = resolveViewName(sTarget, modelMap, request);
+		view.render(modelMap, request, response);
+		
 	}
 	
 	protected View resolveViewName(String viewName, Map<String, Object> model,

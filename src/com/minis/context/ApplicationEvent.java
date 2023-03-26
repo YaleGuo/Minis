@@ -2,7 +2,7 @@ package com.minis.context;
 
 import java.util.EventObject;
 
-public class ApplicationEvent extends EventObject {
+public abstract class ApplicationEvent extends EventObject {
 
 	private static final long serialVersionUID = 1L;
 	protected String msg = null;

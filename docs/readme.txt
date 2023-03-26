@@ -1167,3 +1167,236 @@ URL通过映射机制找到实际的业务逻辑方法。
 	
 	这样，就支持了用户自定义的CustomEditor.
 
+
+
+8.
+	支持@ResponseBody
+	增加从controller返回给前端的字符流数据格式转换支持。
+	public interface HttpMessageConverter {
+		void write(Object obj, HttpServletResponse response) throws IOException;
+	}
+	给了一个默认的实现：DefaultHttpMessageConverter，把object转成Json串。
+		String defaultContentType = "text/json;charset=UTF-8";
+		String defaultCharacterEncoding = "UTF-8";
+		ObjectMapper objectMapper;
+		
+		public void write(Object obj, HttpServletResponse response) throws IOException {
+	        response.setContentType(defaultContentType);
+	        response.setCharacterEncoding(defaultCharacterEncoding);
+	        writeInternal(obj, response);
+	        response.flushBuffer();
+		}
+		private void writeInternal(Object obj, HttpServletResponse response) throws IOException{
+			String sJsonStr = this.objectMapper.writeValuesAsString(obj);
+			PrintWriter pw = response.getWriter();
+			pw.write(sJsonStr);
+		}
+		
+	
+	定义一个ObjectMapper:
+		public interface ObjectMapper {
+			void setDateFormat(String dateFormat);
+			void setDecimalFormat(String decimalFormat);
+			String writeValuesAsString(Object obj);
+		}
+	给了一个默认的实现：DefaultObjectMapper，在	writeValuesAsString中拼JSon串。
+			if (value instanceof Date) {
+				LocalDate localDate = ((Date)value).toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+				strValue = localDate.format(this.datetimeFormatter);
+			}
+			else if (value instanceof BigDecimal || value instanceof Double || value instanceof Float){
+				strValue = this.decimalFormatter.format(value);
+			}
+			else {
+				strValue = value.toString();
+			}
+	目前为止，我们也只支持Date, Number和String三种类型。
+	
+	RequestMappingHandlerAdapter增加两个属性：
+	public class RequestMappingHandlerAdapter implements HandlerAdapter {
+		private WebBindingInitializer webBindingInitializer = null;
+		private HttpMessageConverter messageConverter = null;
+
+	方法invokeHandlerMethod()增加	messageConverter 处理:	
+	protected ModelAndView invokeHandlerMethod(HttpServletRequest request,
+			HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+			
+			... ...
+			
+			if (invocableMethod.isAnnotationPresent(ResponseBody.class)){ //ResponseBody
+		        this.messageConverter.write(returnObj, response);
+			}
+			
+			... ...
+	}
+		
+	
+	这些webBindingInitializer和messageConverter都通过配置注入：
+	<bean id="handlerAdapter" class="com.minis.web.servlet.RequestMappingHandlerAdapter"> 
+	 <property type="com.minis.web.HttpMessageConverter" name="messageConverter" ref="messageConverter"/>
+	 <property type="com.minis.web.WebBindingInitializer" name="webBindingInitializer" ref="webBindingInitializer"/>
+	</bean>
+	
+	<bean id="webBindingInitializer" class="com.test.DateInitializer" /> 
+	
+	<bean id="messageConverter" class="com.minis.web.DefaultHttpMessageConverter"> 
+	 <property type="com.minis.web.ObjectMapper" name="objectMapper" ref="objectMapper"/>
+	</bean>
+	<bean id="objectMapper" class="com.minis.web.DefaultObjectMapper" >
+	 <property type="String" name="dateFormat" value="yyyy/MM/dd"/>
+	 <property type="String" name="decimalFormat" value="###.##"/>
+	</bean>
+	
+	DispatcherServlet中通过getBean获取handlerAdapter（约定一个名字）。
+	protected void initHandlerAdapters(WebApplicationContext wac) {
+ 		this.handlerAdapter = (HandlerAdapter) wac.getBean(HANDLER_ADAPTER_BEAN_NAME);
+    }
+    
+	客户程序HelloWorldBean:
+		@RequestMapping("/test7")
+		@ResponseBody
+		public User doTest7(User user) {
+			user.setName(user.getName() + "---");
+			user.setBirthday(new Date());
+			return user;
+		}	
+    
+	完成数据的转换之后，我们接着实现ModelAndView：
+	public class ModelAndView {
+		private Object view;
+		private Map<String, Object> model = new HashMap<>();
+	}
+	
+	类RequestMappingHandlerAdapter的	方法invokeHandlerMethod() 返回值改为ModelAndView:	
+		protected ModelAndView invokeHandlerMethod(HttpServletRequest request,
+			HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+
+			... ...
+					
+			ModelAndView mav = null;
+			if (invocableMethod.isAnnotationPresent(ResponseBody.class)){ //ResponseBody
+		        this.messageConverter.write(returnObj, response);
+			}
+			else {
+				if (returnObj instanceof ModelAndView) {
+					mav = (ModelAndView)returnObj;
+				}
+				else if(returnObj instanceof String) {
+					String sTarget = (String)returnObj;
+					mav = new ModelAndView();
+					mav.setViewName(sTarget);
+				}
+			}
+			
+			return mav;
+		}
+	
+	DispatcherServlet修改：
+	protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
+		HttpServletRequest processedRequest = request;
+		HandlerMethod handlerMethod = null;
+		ModelAndView mv = null;
+		
+		handlerMethod = this.handlerMapping.getHandler(processedRequest);
+		mv = ha.handle(processedRequest, response, handlerMethod);
+
+		render(processedRequest, response, mv);
+	}
+	
+	//用jsp 进行render
+	protected void render( HttpServletRequest request, HttpServletResponse response,ModelAndView mv) throws Exception {
+		if (mv == null) { //@ResponseBody
+			response.getWriter().flush();
+			response.getWriter().close();
+			return;
+		}
+		//获取model，写到request的Attribute中：
+		Map<String, Object> modelMap = mv.getModel();
+		for (Map.Entry<String, Object> e : modelMap.entrySet()) {
+			request.setAttribute(e.getKey(),e.getValue());
+		}
+		
+		String sTarget = mv.getViewName();
+		String sPath = "/" + sTarget + ".jsp";
+		request.getRequestDispatcher(sPath).forward(request, response);
+	}
+	
+	客户程序HelloWorldBean:
+		@RequestMapping("/test5")
+		public ModelAndView doTest5(User user) {
+			ModelAndView mav = new ModelAndView("test","msg",user.getName());
+			return mav;
+		}
+
+	
+
+9.
+	支持前端View，核心是render().
+	public interface View {
+		void render(Map<String, ?> model, HttpServletRequest request, HttpServletResponse response);
+	}
+	Controller返回值增加ModelAndView：
+	public class ModelAndView {
+		private Object view;
+		private Map<String, Object> model = new HashMap<>();
+	}
+
+	DispatcherServlet增加属性：
+		private ViewResolver viewResolver;
+		
+	DispatcherServlet初始化后刷新：	
+		protected void Refresh() {
+			initHandlerMappings(this.webApplicationContext);
+			initHandlerAdapters(this.webApplicationContext);
+			initViewResolvers(this.webApplicationContext);
+    	}
+
+	RequestMappingHandlerAdapter调用invokeHandlerMethod拿到返回值后进行如下处理：
+				if (returnObj instanceof ModelAndView) {
+					mav = (ModelAndView)returnObj;
+				}
+				else if(returnObj instanceof String) {
+					String sTarget = (String)returnObj;
+					mav = new ModelAndView();
+					mav.setViewName(sTarget);
+				}
+				
+	DispatcherServlet调用RequestMappingHandlerAdapter的invokeHandlerMethod后处理范式的ModelAndView，
+		mv = ha.handle(processedRequest, response, handlerMethod);
+		render(processedRequest, response, mv);
+	
+	render的实现，就是先按照规则找到具体的view(某个jdp页面)，拿到model数据，然后再render：	
+	protected void render( HttpServletRequest request, HttpServletResponse response,ModelAndView mv) throws Exception {
+		String sTarget = mv.getViewName();
+		Map<String, Object> modelMap = mv.getModel();
+		View view = resolveViewName(sTarget, modelMap, request);
+		view.render(modelMap, request, response);
+	}
+	
+	提供一个默认的JstlView实现：
+	public void render(Map<String, ?> model, HttpServletRequest request, HttpServletResponse response)
+			throws Exception {
+		for (Entry<String, ?> e : model.entrySet()) {
+			request.setAttribute(e.getKey(),e.getValue());
+		}
+		
+		request.getRequestDispatcher(getUrl()).forward(request, response);
+	}
+	
+	这些也是通过配置注入的：
+	<bean id="viewResolver" class="com.minis.web.servlet.view.InternalResourceViewResolver" >
+	 <property type="String" name="viewClassName" value="com.minis.web.servlet.view.JstlView" />
+	 <property type="String" name="prefix" value="/jsp/" />
+	 <property type="String" name="suffix" value=".jsp" />
+    </bean>
+		
+    另外，我们把容器的listener, beanfactorypostprocessor还有beanpostprocessor都配置化了。
+    	<bean id="contextListener" class="com.test.MyListener" />
+
+    	<bean id="beanFactoryPostProcessor" class="com.test.MyBeanFactoryPostProcessor" />
+
+    	<bean id="autowiredAnnotationBeanPostProcessor" class="com.minis.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor" />
+    	<bean id="logBeanPostProcessor" class="com.test.LogBeanPostProcessor" />
+    名字不重要，是通过类型匹配进行注入的。
+
+    至此，有了完整的MVC实现。
