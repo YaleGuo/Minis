@@ -766,5 +766,76 @@ URL通过映射机制找到实际的业务逻辑方法。
 	
 	doGet方法还是没有变化。
 	
-    
+	
+	
+3.
+	现在我们把IoC和MVC结合在一起。使得mvc controller这一层可以引用到内部的bean。
+	
+	以前我们IoC容器用了一个main()运行启动，现在不用了，我们可以用JavaEE服务器的启动机制，
+	这里我用到了Listener机制。
+		
+	增加ContextLoaderListener，持有一个WebApplicationContext：
+		public static final String CONFIG_LOCATION_PARAM = "contextConfigLocation";
+		private WebApplicationContext context;
+	启动时注册WebApplicationContext，并设置到servletContext的Attribute中：
+	public void contextInitialized(ServletContextEvent event) {
+		initWebApplicationContext(event.getServletContext());
+	}
+	private void initWebApplicationContext(ServletContext servletContext) {
+		String sContextLocation = servletContext.getInitParameter(CONFIG_LOCATION_PARAM);
+		WebApplicationContext wac = new AnnotationConfigWebApplicationContext(sContextLocation);
+		wac.setServletContext(servletContext);
+		this.context = wac;
+		servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, this.context);
+	}
+	最关键的是创建了一个AnnotationConfigWebApplicationContext wac。这个wac与容器的servletContext互相引用。
+	
+	WebApplicationContext定义如下：
+	public interface WebApplicationContext extends ApplicationContext {
+		String ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE = WebApplicationContext.class.getName() + ".ROOT";
+		ServletContext getServletContext();
+		void setServletContext(ServletContext servletContext);
+	}
+	public class AnnotationConfigWebApplicationContext 
+					extends ClassPathXmlApplicationContext implements WebApplicationContext{
+		private ServletContext servletContext;
+	}
+	我们可以看出，AnnotationConfigWebApplicationContext实际上就是一个IoC中的ClassPathXmlApplicationContext，并且
+	加入了servletContext信息，构成一个适合web场景的上下文。这样Listener启动的时候IoC容器启动了，通过刷新装载了所有管理的beans.
+	
+	合在一起后，就有两个配置文件了，一个给DispatcherServlet, 一个给ContextLoaderListener：
+	applicationContext.xml:
+	<?xml version="1.0" encoding="UTF-8"?>
+	<beans>
+		<bean id="bbs" class="com.test.service.BaseBaseService"> 
+		    <property type="com.test.service.AServiceImpl" name="as" ref="aservice"/>
+		</bean>
+		<bean id="aservice" class="com.test.service.AServiceImpl"> 
+			<constructor-arg type="String" name="name" value="abc"/>
+			<constructor-arg type="int" name="level" value="3"/>
+	        <property type="String" name="property1" value="Someone says"/>
+	        <property type="String" name="property2" value="Hello World!"/>
+	        <property type="com.test.service.BaseService" name="ref1" ref="baseservice"/>
+		</bean>
+		<bean id="baseservice" class="com.test.service.BaseService"> 
+		</bean>
+	</beans>
+	
+	minisMVC-servlet.xml:
+	<?xml version="1.0" encoding="UTF-8" ?>
+	<components>
+		<component-scan base-package="com.test"/>
+	</components>
+	
+	Dispatcher初始化的时候获取上面注册的Context,这样也就可以从servlet中拿到listener时启用的WebApplicationContext了:
+    	this.webApplicationContext = (WebApplicationContext) this.getServletContext().getAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE);
+    	
+	然后再常规的扫描Controller
+        sContextConfigLocation = config.getInitParameter("contextConfigLocation");
+        this.packageNames = XmlScanComponentHelper.getNodeValue(xmlPath);
+        Refresh();
+
+	到此为止，我们的WebApplicationContext和Dispatcher都准备好了。并且从Dispatcher可以访问到WebApplicationContext，
+	但是注意，反过来是拿不到的，这个单向的引用必须记住。
+	
 	
