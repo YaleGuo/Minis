@@ -1790,3 +1790,100 @@ URL通过映射机制找到实际的业务逻辑方法。
     </bean>
 		
 	别的程序没有任何变化。
+
+-----------------------------------mBatis--------------------------------------
+
+    	String sLocationPath = this.getClass().getClassLoader().getResource("").getPath()+location;
+        File dir = new File(sLocationPath);
+        for (File file : dir.listFiles()) {
+            if(file.isDirectory()){
+            	scanLocation(location+"/"+file.getName());
+            }else{
+                buildMapperNodes(location+"/"+file.getName());
+            }
+        }
+    }
+	扫描的过程中将SQL定义写到内部注册表Map中：
+	private Map<String, MapperNode> buildMapperNodes(String filePath) {
+        SAXReader saxReader=new SAXReader();
+        URL xmlPath=this.getClass().getClassLoader().getResource(filePath);
+
+		Document document = saxReader.read(xmlPath);
+		Element rootElement=document.getRootElement();
+
+		String namespace = rootElement.attributeValue("namespace");
+
+        Iterator<Element> nodes = rootElement.elementIterator();;
+        while (nodes.hasNext()) {
+        	Element node = nodes.next();
+            String id = node.attributeValue("id");
+            String parameterType = node.attributeValue("parameterType");
+            String resultType = node.attributeValue("resultType");
+            String sql = node.getText();
+
+            MapperNode selectnode = new MapperNode();
+            selectnode.setNamespace(namespace);
+            selectnode.setId(id);
+            selectnode.setParameterType(parameterType);
+            selectnode.setResultType(resultType);
+            selectnode.setSql(sql);
+            selectnode.setParameter("");
+
+            this.mapperNodeMap.put(namespace + "." + id, selectnode);
+        }
+	    return this.mapperNodeMap;
+	}
+	可以看到，map的id是namespace+"."+id,对上例即com.test.entity.User.getUserInfo
+
+	注册上面的bean：
+	<bean id="sqlSessionFactory" class="com.minis.batis.DefaultSqlSessionFactory" init-method="init">
+        <property type="String" name="mapperLocations" value="mapper"></property>
+    </bean>
+
+	用户使用的时候，
+	public class UserService {
+		@Autowired
+		SqlSessionFactory sqlSessionFactory;
+
+		public User getUserInfo(int userid) {
+			//final String sql = "select id, name,birthday from users where id=?";
+			String sqlid = "com.test.entity.User.getUserInfo";
+			SqlSession sqlSession = sqlSessionFactory.openSession();
+			return (User)sqlSession.selectOne(sqlid, new Object[]{new Integer(userid)},
+					(pstmt)->{
+						ResultSet rs = pstmt.executeQuery();
+						User rtnUser = null;
+						if (rs.next()) {
+							rtnUser = new User();
+							rtnUser.setId(userid);
+							rtnUser.setName(rs.getString("name"));
+							rtnUser.setBirthday(new java.util.Date(rs.getDate("birthday").getTime()));
+						} else {
+						}
+						return rtnUser;
+					}
+			);
+		}
+	}
+	基本于以前直接用jdbc tempalte一样，只是变成了：
+	sqlSessionFactory.openSession();
+	通过sqlSession.selectOne执行。
+	public class DefaultSqlSession implements SqlSession{
+		JdbcTemplate jdbcTemplate;
+		SqlSessionFactory sqlSessionFactory;
+
+		@Override
+		public Object selectOne(String sqlid, Object[] args, PreparedStatementCallback pstmtcallback) {
+			String sql = this.sqlSessionFactory.getMapperNode(sqlid).getSql();
+
+			return jdbcTemplate.query(sql, args, pstmtcallback);
+		}
+
+		private void buildParameter(){
+		}
+
+		private Object resultSet2Obj() {
+			return null;
+		}
+	}
+	可以看出，最终还是落到了jdbcTemplate.query(sql, args, pstmtcallback)。
