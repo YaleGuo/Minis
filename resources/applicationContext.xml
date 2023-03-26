@@ -12,6 +12,7 @@
 	</bean>
 	<bean id="baseservice" class="com.test.service.BaseService"> 
 	</bean>
-
+	<bean id="webBindingInitializer" class="com.test.DateInitializer"> 
+	</bean>
 	
 </beans>

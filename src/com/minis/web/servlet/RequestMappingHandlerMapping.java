@@ -45,6 +45,8 @@ public class RequestMappingHandlerMapping implements HandlerMapping {
     					this.mappingRegistry.getUrlMappingNames().add(urlmapping);
     					this.mappingRegistry.getMappingObjs().put(urlmapping, obj);
     					this.mappingRegistry.getMappingMethods().put(urlmapping, method);
+    					this.mappingRegistry.getMappingMethodNames().put(urlmapping, methodName);
+    					this.mappingRegistry.getMappingClasses().put(urlmapping, clz);
     				}
     			}
     		}
@@ -63,7 +65,10 @@ public class RequestMappingHandlerMapping implements HandlerMapping {
 
 		Method method = this.mappingRegistry.getMappingMethods().get(sPath);
 		Object obj = this.mappingRegistry.getMappingObjs().get(sPath);
-		HandlerMethod handlerMethod = new HandlerMethod(method, obj);
+		Class<?> clz = this.mappingRegistry.getMappingClasses().get(sPath);
+		String methodName = this.mappingRegistry.getMappingMethodNames().get(sPath);
+	
+		HandlerMethod handlerMethod = new HandlerMethod(method, obj, clz, methodName);
 		
 		return handlerMethod;
 	}
