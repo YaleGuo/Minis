@@ -571,3 +571,200 @@ Preface
 	
 	至此，我们的IoC就小有模样了。
 		
+
+		
+-----------------------------------MVC--------------------------------------
+MVC的基本思路是屏蔽servlet的概念，让应用程序员只需要了解很少的servlet，主要写业务逻辑。浏览器访问的
+URL通过映射机制找到实际的业务逻辑方法。
+按照servlet规范，可以通过Filter拦截，也可以通过Servlet拦截。实际的实现过程中，我通过DispatcherServlet
+拦截所有请求，处理映射关系，调用业务逻辑代码，处理返回值回递给浏览器。
+程序员写的业务逻辑程序，我们叫做bean。
+
+1.
+	写了一个DispatcherServlet，由它来处理所有请求，初始化的时候从外部xml文件读取mapping信息：
+	  <servlet>
+	    <servlet-name>minisMVC</servlet-name>
+	    <servlet-class>com.minis.web.DispatcherServlet</servlet-class>
+	    <init-param>
+	      <param-name>contextConfigLocation</param-name>
+	      <param-value> /WEB-INF/minisMVC-servlet.xml </param-value>
+	    </init-param>
+	    <load-on-startup>1</load-on-startup>
+	  </servlet>
+	  <servlet-mapping>
+	    <servlet-name>minisMVC</servlet-name>
+	    <url-pattern>/</url-pattern>
+	  </servlet-mapping>
+	
+	定义外部minisMVC-servlet.xml文件格式：
+	<bean id="/helloworld" class="com.minis.test.HelloWorldBean" value="doGet" />
+
+	
+	DispatcherServlet内部记录在三个Map中，记录了URL对应的类对象和方法
+	    private Map<String,MappingValue> mappingValues;
+    	private Map<String,Class<?>> mappingClz = new HashMap<>();
+    	private Map<String,Object> mappingObjs = new HashMap<>();
+    
+    init()的核心代码：	
+    public void init(ServletConfig config) throws ServletException {
+    	super.init(config);
+    	
+        sContextConfigLocation = config.getInitParameter("contextConfigLocation");
+        
+        URL xmlPath = null;
+		xmlPath = this.getServletContext().getResource(sContextConfigLocation);
+		Resource rs = new ClassPathXmlResource(xmlPath);
+        XmlConfigReader reader = new XmlConfigReader();
+        mappingValues = reader.loadConfig(rs);
+        Refresh();
+    }
+	从上述代码可以看出，这个DispatcherServlet初始化的时候，由config(通过容器如Tomcat传入)
+	从外部的文件(由contextConfigLocation初始化参数定义)读取资源，把minisMVC-servlet.xml
+	定义的bean定义转换成内存结构Map<String,MappingValue> mappingValues。
+	读取外部文件，解析XML，生成内部结构，这些操作由ClassPathXmlResource和XmlConfigReader完成，
+	这个实现接近于IoC中的相应功能。
+	最后调用它Refresh()实际创建bean.
+	
+	protected void Refresh() {
+    	for (Map.Entry<String,MappingValue> entry : mappingValues.entrySet()) {
+    		String id = entry.getKey();
+    		String className = entry.getValue().getClz();
+    		Object obj = null;
+    		Class<?> clz = null;
+    		
+			clz = Class.forName(className);
+			obj = clz.newInstance();
+
+			mappingClz.put(id, clz);
+    		mappingObjs.put(id, obj);
+    	}
+    }
+    Refresh()就是通过读取mappingValues中的bean定义，加载类，创建实例。
+    
+	这个servlet负责所有请求，我们先实现doGet:
+	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		String sPath = request.getServletPath();
+		
+		Class<?> clz = this.mappingClz.get(sPath);
+		Object obj = this.mappingObjs.get(sPath);
+		String methodName = this.mappingValues.get(sPath).getMethod();
+		Object objResult = null;
+
+		Method method = clz.getMethod(methodName);
+		objResult = method.invoke(obj);
+		
+		response.getWriter().append(objResult.toString());
+	}
+	这是一个框架实现，它从mappingClz，mappingObjs和mappingValues获取与当前请求url关联的bean信息，
+	然后调用实例的相关方法，返回结构通过response返回。
+	
+	这个实现很简陋，调用的方法没有参数，返回值只是String，回写直接通过response。
+	
+
+2.
+	通过	定义外部minisMVC-servlet.xml文件格式：
+	<bean id="/helloworld" class="com.minis.test.HelloWorldBean" value="doGet" />
+	每个业务逻辑的方法都要定义一次，很麻烦。
+	
+	我们现在支持<component-scan base-package="com.minis.test"/>扫描所有的相关类
+	并支持注解   @RequestMapping 来实现url和方法的映射。
+	
+	先修改minisMVC-servlet.xml文件格式：
+	<components>
+	<component-scan base-package="com.minis.test"/>
+	</components>
+	不再一个类一个类一个方法一个方法声明了，简单地写一个package就可以了。
+	packages里面的类，我们不把它们叫bean，而是用一个特殊的名字controller.
+	
+	同时提供注解,将url与这个方法进行映射：
+	@Target(value={ElementType.METHOD})
+	@Retention(RetentionPolicy.RUNTIME)
+	public @interface RequestMapping {
+	    String value() default "";
+	}
+	目前，我们不提供类级别的RequestMapping.
+	
+	DispatcherServlet中用如下结构保存映射声明：
+		private List<String> packageNames = new ArrayList<>();
+	    private Map<String,Object> controllerObjs = new HashMap<>();
+	    private List<String> controllerNames = new ArrayList<>();
+	    private Map<String,Class<?>> controllerClasses = new HashMap<>();
+	    private List<String> urlMappingNames = new ArrayList<>();
+	    private Map<String,Object> mappingObjs = new HashMap<>();
+	    private Map<String,Method> mappingMethods = new HashMap<>();
+	packageNames是需要扫描的package列表；
+	urlMappingNames是定义的 @RequestMapping名字（url名字）列表；
+	mappingObjs保有的是url名字与对象的映射；
+	mappingObjs保有的是url名字与方法的映射；
+	controllerNames是controller的名字列表；
+	controllerClasses是controller名字与类的映射；
+	controllerObjs是controller名字与对象的映射；
+	
+	我们不再用ClassPathXmlResource和XmlConfigReader提供bean的注册，而是用一个
+	XmlScanComponentHelper类扫描minisMVC-servlet.xml，拿到List<String> packages。
+	private List<String> scanPackage(String packageName) {
+    	List<String> tempControllerNames = new ArrayList<>();
+        URL url  =this.getClass().getClassLoader().getResource("/"+packageName.replaceAll("\\.", "/"));
+        File dir = new File(url.getFile());
+        for (File file : dir.listFiles()) {
+            if(file.isDirectory()){
+            	scanPackage(packageName+"."+file.getName());
+            }else{
+                String controllerName = packageName +"." +file.getName().replace(".class", "");
+                tempControllerNames.add(controllerName);
+            }
+        }
+        return tempControllerNames;
+    }
+	考虑目录下还有子目录，所以用到了递归。
+	结果就是把package下所有的类的全名加到tempControllerNames列表中返回。
+	
+	Refresh()分成两步：
+	protected void Refresh() {
+    	initController();  //初始化controller
+    	initMapping(); //初始化url映射
+    }
+    
+	初始化controller对扫描到的每一个类进行加载和实例化，放到map中，以类名为key。
+    protected void initController() {
+    	this.controllerNames = scanPackages(this.packageNames);
+    	
+    	for (String controllerName : this.controllerNames) {
+    		Object obj = null;
+    		Class<?> clz = null;
+
+			clz = Class.forName(controllerName);
+			this.controllerClasses.put(controllerName,clz);
+
+			obj = clz.newInstance();
+			this.controllerObjs.put(controllerName, obj);
+    	}
+    }
+	
+	初始化url映射，找到定义了@RequestMapping的方法，url存放到urlMappingNames中，映射的对象
+	存放到mappingObjs中，映射的方法存放到mappingMethods中。
+    protected void initMapping() {
+    	for (String controllerName : this.controllerNames) {
+    		Class<?> clazz = this.controllerClasses.get(controllerName);
+    		Object obj = this.controllerObjs.get(controllerName);
+    		Method[] methods = clazz.getDeclaredMethods();
+    		if(methods!=null){
+    			for(Method method : methods){
+    				boolean isRequestMapping = method.isAnnotationPresent(RequestMapping.class);
+    				if (isRequestMapping){
+    					String methodName = method.getName();
+    					String urlmapping = method.getAnnotation(RequestMapping.class).value();
+    					this.urlMappingNames.add(urlmapping);
+    					this.mappingObjs.put(urlmapping, obj);
+    					this.mappingMethods.put(urlmapping, method);
+    				}
+    			}
+    		}
+    	}
+    }
+	所以这一部分程序就取代了以前的bean解析出来的映射。
+	
+	doGet方法还是没有变化。
+	
+    
+	
