@@ -387,6 +387,85 @@ Preface
 	
 	
 	
+7.
+	createBean()里面不直接handleProperties()了，而是扩充一下概念，调用一个新方法：
+		populateBean(bd, clz, obj);
+		目前阶段，populateBean()只做一件事情：调用handleProperties()
+		private void populateBean(BeanDefinition bd, Class<?> clz, Object obj) {
+			handleProperties(bd, clz, obj);
+		}
 	
+	增强getBean()，在createBean()之后，支持beanpostprocessor和init-method:
+		//beanpostprocessor
+		//step 1 : postProcessBeforeInitialization
+		applyBeanPostProcessorsBeforeInitialization(singleton, beanName);				
+
+		//step 2 : init-method
+		if (bd.getInitMethodName() != null && !bd.getInitMethodName().equals("")) {
+			invokeInitMethod(bd, singleton);
+		}
+
+		//step 3 : postProcessAfterInitialization
+		applyBeanPostProcessorsAfterInitialization(singleton, beanName);
+		
+	为了扩展性，把SimpleBeanFactory分成了AbstractBeanFactory和AutowireCapableBeanFactory。
+	AbstractBeanFactory中applyBeanPostProcessorsBeforeInitialization和applyBeanPostProcessorsAfterInitialization
+	是abstract的。需要在AutowireCapableBeanFactory中去实现，这个类实现了自动注入。(AutowireCapableBeanFactory通过BeanPostProcessor实现了Autowired)
 	
+	定义如下：
+	public abstract class AbstractBeanFactory extends DefaultSingletonBeanRegistry implements BeanFactory,BeanDefinitionRegistry;
+	public class AutowireCapableBeanFactory extends AbstractBeanFactory{
+		private final List<AutowiredAnnotationBeanPostProcessor> beanPostProcessors = new ArrayList<AutowiredAnnotationBeanPostProcessor>();
+	}
+	这个AutowireCapableBeanFactory扩展出来的功能是支持Autowired自动注入,所以里面有一个list存放了AutowiredAnnotationBeanPostProcessor。
+
+	Autowired注解定义如下：
+	@Target(ElementType.FIELD)
+	@Retention(RetentionPolicy.RUNTIME)
+	public @interface Autowired {
+	}
+		
+	BeanPostProcessor接口提供两个方法：
+		Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException;
+		Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException;
+
+	我们在postProcessBeforeInitialization()方法中利用Java的reflection机制进行属性设置，达到自动注入的目的。
+	因此可以看出，在bean的initmethod被调用之前，这些该注入的属性都已经设置好了。
 	
+	实际的注入代码实现如下：
+		String fieldName = field.getName();
+		Object autowiredObj = this.getBeanFactory().getBean(fieldName);
+		field.set(bean, autowiredObj);
+	可以看出，目前我们支持的是按照名称匹配进行注入，这点与Spring的默认模式不一样。后期可以扩展为可配置项。
+	
+	到此，类已经比较多了，我们参照Spring的目录重新组织了一下bzuieans目录结构如下：
+	com.minis
+	com.minis.beans
+	com.minis.beans.factory
+	com.minis.beans.factory.annotation
+	com.minis.beans.factory.config
+	com.minis.beans.factory.support
+	com.minis.beans.factory.xml
+	
+	最后，ClassPathXmlApplicationContext仍然是一个集成环境，给refresh()增加一个功能registerBeanPostProcessors():
+	public void refresh() throws BeansException, IllegalStateException {
+		// Register bean processors that intercept bean creation.
+		registerBeanPostProcessors(this.beanFactory);
+
+		// Initialize other special beans in specific context subclasses.
+		onRefresh();
+	}
+	private void registerBeanPostProcessors(AutowireCapableBeanFactory bf) {
+		//if (supportAutowire) {
+			bf.addBeanPostProcessor(new AutowiredAnnotationBeanPostProcessor());
+		//}
+	}
+	private void onRefresh() {
+		this.beanFactory.refresh();
+	}
+	我们暂时只有自动注入这么一个beanpostprocessor.
+	
+	我们还为ClassPathXmlApplicationContext提供了一个BeanFactoryPostProcessor：
+		private final List<BeanFactoryPostProcessor> beanFactoryPostProcessors =
+			new ArrayList<BeanFactoryPostProcessor>();	
+	别的程序可以利用这个结构来执行一些预处理工作。
